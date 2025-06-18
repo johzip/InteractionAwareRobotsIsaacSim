@@ -48,14 +48,23 @@ class SpotRunner(object):
             position=np.array([1, 0, 0.8]),
         )
 
-        self._base_command = np.zeros(3)
+        self._base_command = np.zeros(9)
+        # movement array: [v_x, v_y, w_z, arm_joint_1, ..., arm_joint_6]
         self._input_keyboard_mapping = {
-            "NUMPAD_8": [1.0, 0.0, 0.0], "UP": [1.0, 0.0, 0.0],
-            "NUMPAD_2": [-1.0, 0.0, 0.0], "DOWN": [-1.0, 0.0, 0.0],
-            "NUMPAD_6": [0.0, -1.0, 0.0], "RIGHT": [0.0, -1.0, 0.0],
-            "NUMPAD_4": [0.0, 1.0, 0.0], "LEFT": [0.0, 1.0, 0.0],
-            "NUMPAD_7": [0.0, 0.0, 1.0], "N": [0.0, 0.0, 1.0],
-            "NUMPAD_9": [0.0, 0.0, -1.0], "M": [0.0, 0.0, -1.0],
+            "UP": [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            "DOWN": [-1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            "RIGHT": [0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            "LEFT": [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            "N": [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], # turn left
+            "M": [0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], # turn right
+            #arm control open
+            "NUMPAD_0": [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0], "NUMPAD_1": [0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0], 
+            "NUMPAD_2": [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0], "NUMPAD_3": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0], 
+            "NUMPAD_4": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0], "NUMPAD_5": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0], 
+            #arm control close
+            "NUMPAD_6": [0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0], "NUMPAD_7": [0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0],
+            "NUMPAD_8": [0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0], "NUMPAD_9": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0],
+            "NUMPAD_/": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0], "NUMPAD_*": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0],
         }
 
         self.needs_reset = False
@@ -107,6 +116,8 @@ class SpotRunner(object):
         elif event.type == carb.input.KeyboardEventType.KEY_RELEASE:
             if event.input.name in self._input_keyboard_mapping:
                 self._base_command -= np.array(self._input_keyboard_mapping[event.input.name])
+
+        print(f"Current command: {self._base_command}")
         return True
 
 

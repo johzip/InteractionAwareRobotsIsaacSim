@@ -55,7 +55,7 @@ class SpotFlatTerrainPolicy(PolicyController):
         Compute the observation vector for the policy
 
         Argument:
-        command (np.ndarray) -- the robot command (v_x, v_y, w_z)
+        command (np.ndarray) -- the robot command (v_x, v_y, w_z, arm_joint_1, ..., arm_joint_6)
 
         Returns:
         np.ndarray -- The observation vector.
@@ -79,14 +79,14 @@ class SpotFlatTerrainPolicy(PolicyController):
         # Gravity
         obs[6:9] = gravity_b
         # Command
-        obs[9:12] = command
+        obs[9:18] = command
         # Joint states
         current_joint_pos = self.robot.get_joint_positions()
         current_joint_vel = self.robot.get_joint_velocities()
-        obs[12:24] = current_joint_pos - self.default_pos
-        obs[24:36] = current_joint_vel
+        obs[18:30] = current_joint_pos - self.default_pos
+        obs[30:42] = current_joint_vel
         # Previous Action
-        obs[36:48] = self._previous_action
+        obs[42:54] = self._previous_action
 
         return obs
 
@@ -96,7 +96,7 @@ class SpotFlatTerrainPolicy(PolicyController):
 
         Argument:
         dt (float) -- Timestep update in the world.
-        command (np.ndarray) -- the robot command (v_x, v_y, w_z)
+        command (np.ndarray) -- the robot command (v_x, v_y, w_z, arm_joint_1, ..., arm_joint_6)
 
         """
         if self._policy_counter % self._decimation == 0:
@@ -149,7 +149,7 @@ class SpotArmFlatTerrainPolicy(PolicyController):
         Compute the observation vector for the policy
 
         Argument:
-        command (np.ndarray) -- the robot command (v_x, v_y, w_z)
+        command (np.ndarray) -- the robot command (v_x, v_y, w_z, arm_joint_1, ..., arm_joint_6)
 
         Returns:
         np.ndarray -- The observation vector.
@@ -165,7 +165,7 @@ class SpotArmFlatTerrainPolicy(PolicyController):
         ang_vel_b = np.matmul(R_BI, ang_vel_I)
         gravity_b = np.matmul(R_BI, np.array([0.0, 0.0, -1.0]))
 
-        obs = np.zeros(69)
+        obs = np.zeros(75)
         # Base lin vel
         obs[:3] = lin_vel_b
         # Base ang vel
@@ -173,14 +173,14 @@ class SpotArmFlatTerrainPolicy(PolicyController):
         # Gravity
         obs[6:9] = gravity_b
         # Command
-        obs[9:12] = command
+        obs[9:18] = command
         # Joint states
         current_joint_pos = self.robot.get_joint_positions()
         current_joint_vel = self.robot.get_joint_velocities()
-        obs[12:31] = current_joint_pos - self.default_pos
-        obs[31:50] = current_joint_vel
+        obs[18:37] = current_joint_pos - self.default_pos
+        obs[37:56] = current_joint_vel
         # Previous Action
-        obs[50:69] = self._previous_action
+        obs[56:75] = self._previous_action
 
         return obs
 
@@ -190,7 +190,7 @@ class SpotArmFlatTerrainPolicy(PolicyController):
 
         Argument:
         dt (float) -- Timestep update in the world.
-        command (np.ndarray) -- the robot command (v_x, v_y, w_z)
+        command (np.ndarray) -- the robot command (v_x, v_y, w_z, arm_joint_1, ..., arm_joint_6)
 
         """
         if self._policy_counter % self._decimation == 0:
