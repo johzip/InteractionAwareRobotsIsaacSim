@@ -10,6 +10,11 @@ import cv2
 
 from pxr import UsdGeom, UsdPhysics, Sdf
 
+from omni.isaac.core.utils.prims import create_prim
+from omni.isaac.sensor import Camera
+import isaacsim.core.utils.numpy.rotations as rot_utils
+import time
+
 from isaacsim.core.api import World
 from isaacsim.core.utils.prims import define_prim
 from spot_policy import SpotFlatTerrainPolicy, SpotArmFlatTerrainPolicy
@@ -61,6 +66,17 @@ class SpotRunner(object):
         self.needs_reset = False
         self.first_step = True
 
+        
+        self.camera_prim_pathRight = "/World/Spot/body/frontright_fisheye"
+        self.camera_prim_pathLeft = "/World/Spot/body/frontleft_fisheye" 
+        
+        self.cameraRight = Camera(self.camera_prim_pathRight)
+        self.cameraLeft = Camera(self.camera_prim_pathLeft)
+    
+        self.picfreq = 2  # frequency to take pictures in seconds
+        self.IDcounter = 0  # counter for the image ID
+        self.output_dir = Path(os.path.join(BASE_DIR, "output/", str(int(time.time()))))
+
     def add_triangle_mesh_colliders(self, prim):
         # If this prim is a mesh, add a triangle mesh collider
         if prim.IsA(UsdGeom.Mesh):
@@ -92,6 +108,28 @@ class SpotRunner(object):
             self.first_step = True
         else:
             self._spot.forward(step_size, self._base_command)
+
+        #TODO Camera controller
+        #current_time = time.time()
+        #if current_time - self.last_capture_time >= self.picfreq: # take picture every picfreq seconds
+        #    # Capture image rgb + depth + world cords of the camera
+        #    worldcords = self.camera.get_world_pose()
+        #    rgb = self.camera.get_rgba()
+        #    depth = self.camera.get_depth()
+        #    # Save image using OpenCV
+        #    rgbdId = self.IDcounter 
+        #    self.IDcounter += 1
+  #
+        #    print("position: ")
+        #    print( worldcords)
+#
+        #    if rgb is not None:
+        #        self.output_dir.mkdir(parents=True, exist_ok=True)
+        #        rgb_path = self.output_dir / f"spot_camera_{rgbdId}.png"
+        #        cv2.imwrite(str(rgb_path), cv2.cvtColor(rgb, cv2.COLOR_RGBA2BGR))
+        #        #cv2.imwrite(f"spot_camera_depth_{rgbdId}.txt", depth * 255)
+        #        #cv2.imwrite(f"spot_camera_worldcords_{rgbdId}.txt", worldcords * 255)
+        #    self.last_capture_time = current_time
 
     def run(self) -> None:
         while simulation_app.is_running():
