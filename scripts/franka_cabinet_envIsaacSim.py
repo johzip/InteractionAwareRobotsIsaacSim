@@ -26,6 +26,8 @@ class FrankaCabinetEnv:
         self.num_envs = 1  # Single environment for Isaac Sim
         self.device = "cpu"  # Change to "cuda" if using GPU
         
+        self.needs_reset = False
+
         # Initialize environment
         self._setup_scene()
         
@@ -84,6 +86,7 @@ class FrankaCabinetEnv:
         # Add physics callback
         self._world.add_physics_callback("franka_cabinet_forward", callback_fn=self.on_physics_step)
 
+    
     def on_physics_step(self, step_size):
         """Physics step callback"""
         
@@ -97,63 +100,63 @@ class FrankaCabinetEnv:
         
         # Check for reset conditions
         if self._check_termination() or self.episode_length_buf >= self.max_episode_length:
-            self._reset_environment()
+            self.needs_reset = True
             return
         
         # Print some debug info
         if self.episode_length_buf % 60 == 0:  # Every second
             cabinet_pos = self._cabinet.get_joint_positions()
             if cabinet_pos is not None and len(cabinet_pos) > 0:
-                # FIX: Handle numpy array instead of dictionary
+                # FIX: Handle numpy array and convert to float
                 if isinstance(cabinet_pos, np.ndarray):
-                    drawer_opening = cabinet_pos[0] if len(cabinet_pos) > 0 else 0.0
+                    drawer_opening = cabinet_pos[0].item() if len(cabinet_pos) > 0 else 0.0
                 else:
                     drawer_opening = cabinet_pos.get("drawer_joint", 0.0)
-                print(f"Episode step: {self.episode_length_buf}, Drawer opening: {drawer_opening:.4f}")
-        
-        # Print some debug info
-        if self.episode_length_buf % 60 == 0:  # Every second
-            cabinet_pos = self._cabinet.get_joint_positions()
-            if cabinet_pos is not None and len(cabinet_pos) > 0:
-                drawer_opening = cabinet_pos.get("drawer_joint", 0.0)
                 print(f"Episode step: {self.episode_length_buf}, Drawer opening: {drawer_opening:.4f}")
 
     def _check_termination(self):
         """Check if episode should terminate"""
         cabinet_pos = self._cabinet.get_joint_positions()
         if cabinet_pos is not None:
-            # FIX: Handle numpy array instead of dictionary
+            # FIX: Handle numpy array and convert to float
             if isinstance(cabinet_pos, np.ndarray):
-                drawer_opening = cabinet_pos[0] if len(cabinet_pos) > 0 else 0.0
+                drawer_opening = cabinet_pos[0].item() if len(cabinet_pos) > 0 else 0.0
             else:
                 drawer_opening = cabinet_pos.get("drawer_joint", 0.0)
             return drawer_opening > 0.39
         return False
     
     def _reset_environment(self):
-        """Reset the environment"""
+        """Reset the environment - called outside physics callback"""
         print(f"Resetting environment after {self.episode_length_buf} steps")
         
         # Reset episode counter
         self.episode_length_buf = 0
         
-        # Reset world first
-        self._world.reset()
-        
-        # Re-initialize cabinet
-        self._cabinet.initialize()
-        
-        # Reset cabinet joint - FIX: Handle array-based joint setting
+        # Reset cabinet joint positions before world reset
         try:
             self._cabinet.set_joint_positions({"drawer_joint": 0.0})
         except:
-            # If dictionary doesn't work, try array-based
             self._cabinet.set_joint_positions(np.array([0.0]))
+        
+        # Reset world - this should be safe now
+        self._world.reset()
+        
+        # Re-initialize cabinet
+        if not self._cabinet._is_initialized:
+            self._cabinet.initialize()
+        
+        # Clear reset flag
+        self.needs_reset = False
         
     
     def run(self):
         """Run the simulation"""
         while simulation_app.is_running():
+            # Handle resets outside of physics callback
+            if self.needs_reset:
+                self._reset_environment()
+            
             self._world.step(render=True)
             if self._world.is_stopped():
                 break
