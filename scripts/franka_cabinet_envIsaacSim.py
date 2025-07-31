@@ -34,22 +34,20 @@ class FrankaCabinetEnv:
         self.max_episode_length = int(self.episode_length_s / (physics_dt * self.decimation))
         
     def _setup_scene(self):
-        # Add ground plane
         self._world.scene.add_default_ground_plane()
-        
-        # Load cabinet
+
         cabinet_usd = "/home/zipfelj/data/zipfel/Articulate_3D/full_scene_sim_ready/model_scene_video.usda"
         add_reference_to_stage(usd_path=cabinet_usd, prim_path="/World/Cabinet")
         self._cabinet = Articulation(prim_paths_expr="/World/Cabinet", name="cabinet")
         
-        # Set cabinet initial pose
+        self._world.scene.add(self._cabinet)
+
         cabinet_position = np.array([[0.0, 0.0, 0.39146906]])
         cabinet_orientation = np.array([[0.0673854, 0, 0, -0.997727]])  # w, x, y, z
         self._cabinet.set_world_poses(positions=cabinet_position, orientations=cabinet_orientation)
-        
-        # Set initial joint position for drawer
+
         self._cabinet.set_joint_positions({"drawer_joint": 0.0})
-        
+
         # Add triangle mesh colliders
         self._add_collision_to_scene()
         
@@ -77,10 +75,23 @@ class FrankaCabinetEnv:
     
     def setup(self):
         """Setup physics callback"""
-        self._world.add_physics_callback("franka_cabinet_forward", callback_fn=self.on_physics_step)
+        # Reset the world to initialize all prims
+        self._world.reset()
         
+        # Initialize the cabinet
+        self._cabinet.initialize()
+        
+        # Add physics callback
+        self._world.add_physics_callback("franka_cabinet_forward", callback_fn=self.on_physics_step)
+
     def on_physics_step(self, step_size):
         """Physics step callback"""
+        
+        # Check if first step - ensure everything is initialized
+        if self.episode_length_buf == 0:
+            if not self._cabinet._is_initialized:
+                self._cabinet.initialize()
+        
         # Update episode counter
         self.episode_length_buf += 1
         
@@ -93,14 +104,29 @@ class FrankaCabinetEnv:
         if self.episode_length_buf % 60 == 0:  # Every second
             cabinet_pos = self._cabinet.get_joint_positions()
             if cabinet_pos is not None and len(cabinet_pos) > 0:
+                # FIX: Handle numpy array instead of dictionary
+                if isinstance(cabinet_pos, np.ndarray):
+                    drawer_opening = cabinet_pos[0] if len(cabinet_pos) > 0 else 0.0
+                else:
+                    drawer_opening = cabinet_pos.get("drawer_joint", 0.0)
+                print(f"Episode step: {self.episode_length_buf}, Drawer opening: {drawer_opening:.4f}")
+        
+        # Print some debug info
+        if self.episode_length_buf % 60 == 0:  # Every second
+            cabinet_pos = self._cabinet.get_joint_positions()
+            if cabinet_pos is not None and len(cabinet_pos) > 0:
                 drawer_opening = cabinet_pos.get("drawer_joint", 0.0)
                 print(f"Episode step: {self.episode_length_buf}, Drawer opening: {drawer_opening:.4f}")
-    
+
     def _check_termination(self):
         """Check if episode should terminate"""
         cabinet_pos = self._cabinet.get_joint_positions()
         if cabinet_pos is not None:
-            drawer_opening = cabinet_pos.get("drawer_joint", 0.0)
+            # FIX: Handle numpy array instead of dictionary
+            if isinstance(cabinet_pos, np.ndarray):
+                drawer_opening = cabinet_pos[0] if len(cabinet_pos) > 0 else 0.0
+            else:
+                drawer_opening = cabinet_pos.get("drawer_joint", 0.0)
             return drawer_opening > 0.39
         return False
     
@@ -111,8 +137,18 @@ class FrankaCabinetEnv:
         # Reset episode counter
         self.episode_length_buf = 0
         
-        # Reset cabinet
-        self._cabinet.set_joint_positions({"drawer_joint": 0.0})
+        # Reset world first
+        self._world.reset()
+        
+        # Re-initialize cabinet
+        self._cabinet.initialize()
+        
+        # Reset cabinet joint - FIX: Handle array-based joint setting
+        try:
+            self._cabinet.set_joint_positions({"drawer_joint": 0.0})
+        except:
+            # If dictionary doesn't work, try array-based
+            self._cabinet.set_joint_positions(np.array([0.0]))
         
     
     def run(self):
