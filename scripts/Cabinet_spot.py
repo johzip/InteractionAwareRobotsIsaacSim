@@ -254,6 +254,8 @@ class SpotCabinetRunner(object):
         print("Starting simulation - use arrow keys or numpad to move Spot")
         print("Cabinet drawer will reset automatically when opened too far")
         
+        cameras_ready = False
+
         while simulation_app.is_running():
             # Handle cabinet environment resets
             if self.needs_cabinet_reset:
@@ -262,6 +264,56 @@ class SpotCabinetRunner(object):
             self._world.step(render=True)
             if self._world.is_stopped():
                 self.needs_spot_reset = True
+
+            # Capture images from cameras
+            if not cameras_ready and self._world.current_time_step_index > 5:
+                try:
+                    # Re-initialize cameras to ensure annotators are ready
+                    if self.cameraRight and self.cameraLeft:
+                        # Force camera initialization
+                        self.cameraRight.initialize()
+                        self.cameraLeft.initialize()
+                        cameras_ready = True
+                        print("Cameras are now ready for image capture")
+                except Exception as e:
+                    print(f"Camera initialization error: {e}")
+
+            # Capture images from cameras - only after they're ready
+            if cameras_ready and self.cameraRight and self.cameraLeft:
+                current_time = time.time()
+                if current_time - self.last_capture_time >= 1.0 / self.picfreq:
+                    try:
+                        self.last_capture_time = current_time
+                        right_image = self.cameraRight.get_rgb()
+                        left_image = self.cameraLeft.get_rgb()
+                        
+                        # FIX: Save images to specific directory as requested
+                        if right_image is not None and left_image is not None:
+                            # Create the specific directory for spot images
+                            spot_images_dir = Path("/home/zipfelj/data/zipfel/spot_images/")
+                            spot_images_dir.mkdir(parents=True, exist_ok=True)
+                            
+                            right_image_path = spot_images_dir / f"right_{self.IDcounter:04d}.png"
+                            left_image_path = spot_images_dir / f"left_{self.IDcounter:04d}.png"
+                            
+                            # Convert RGBA to RGB if needed
+                            if right_image.shape[2] == 4:  # RGBA
+                                right_image = cv2.cvtColor(right_image, cv2.COLOR_RGBA2RGB)
+                            if left_image.shape[2] == 4:  # RGBA
+                                left_image = cv2.cvtColor(left_image, cv2.COLOR_RGBA2RGB)
+                            
+                            # Save as RGB
+                            cv2.imwrite(str(right_image_path), cv2.cvtColor(right_image, cv2.COLOR_RGB2BGR))
+                            cv2.imwrite(str(left_image_path), cv2.cvtColor(left_image, cv2.COLOR_RGB2BGR))
+                            
+                            print(f"Captured images: {right_image_path}, {left_image_path}")
+                            self.IDcounter += 1
+                        else:
+                            print("Warning: Could not capture images - cameras returned None")
+                            
+                    except Exception as e:
+                        print(f"Error capturing images: {e}")
+
         return
 
     def _sub_keyboard_event(self, event, *args, **kwargs) -> bool:
