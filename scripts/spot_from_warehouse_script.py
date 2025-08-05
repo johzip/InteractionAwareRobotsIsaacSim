@@ -23,7 +23,7 @@ from isaacsim.core.utils.extensions import enable_extension
 # Import the FrankaCabinetEnv
 from scripts.cabinetSpawer import FrankaCabinetEnv
 
-#enable_extension('isaacsim.ros2.bridge')
+enable_extension('isaacsim.ros2.bridge')
 
 
 class SpotRunner(object):
@@ -40,19 +40,12 @@ class SpotRunner(object):
         self._world = self._cabinet_env._world 
         
         # Setup Spot robot
-        policy_path = os.path.join(BASE_DIR, "Assets/spot_robots/policies/spot_arm/models", "spot_arm_policy.pt")
-        policy_params_path = os.path.join(BASE_DIR, "Assets/spot_robots/policies/spot_arm/params", "env.yaml")
-        usd_path = os.path.join(BASE_DIR, "Assets/spot_robots", "spot_arm.usd")
-
-        self._spot = SpotArmFlatTerrainPolicy(
-            prim_path="/World/Spot",
-            name="Spot",
-            usd_path=usd_path,
-            policy_path=policy_path,
-            policy_params_path=policy_params_path,
-            # Position Spot away from cabinet
-            position=np.array([1, -1.0, 0.9]),
-        )
+        self.policy_path = os.path.join(BASE_DIR, "Assets/spot_robots/policies/spot_arm/models", "spot_arm_policy.pt")
+        self.policy_params_path = os.path.join(BASE_DIR, "Assets/spot_robots/policies/spot_arm/params", "env.yaml")
+        self.usd_path = os.path.join(BASE_DIR, "Assets/spot_robots", "spot_arm.usd")
+        self.spot_position = np.array([1, -1.0, 0.9])  
+        
+        self._spot = None
 
         self._base_command = np.zeros(3)
         self._input_keyboard_mapping = {
@@ -73,11 +66,13 @@ class SpotRunner(object):
         self.cameraRight = None
         self.cameraLeft = None
         
-        self.cameraRight = Camera(self.camera_prim_pathRight)
-        self.cameraLeft = Camera(self.camera_prim_pathLeft)
+
+        #self.cameraRight = Camera(self.camera_prim_pathRight)
+        #self.cameraLeft = Camera(self.camera_prim_pathLeft)
     
         self.picfreq = 2  # frequency to take pictures in seconds
         self.IDcounter = 0  # counter for the image ID
+        self.last_capture_time = time.time()
         self.output_dir = Path(os.path.join(BASE_DIR, "output/", str(int(time.time()))))
 
     def add_triangle_mesh_colliders(self, prim):
@@ -98,6 +93,24 @@ class SpotRunner(object):
         
         # Add the spot to the world scene
         #self._world.scene.add(self._spot)
+        print("Creating Spot robot")
+        self._spot = SpotArmFlatTerrainPolicy(
+            prim_path="/World/Spot",
+            name="Spot",
+            usd_path=self.usd_path,
+            policy_path=self.policy_path,
+            policy_params_path=self.policy_params_path,
+            position=self.spot_position,
+        )
+
+        try:
+            self.cameraRight = Camera(self.camera_prim_pathRight)
+            self.cameraLeft = Camera(self.camera_prim_pathLeft)
+            print("Cameras initialized successfully")
+        except Exception as e:
+            print(f"Warning: Could not initialize cameras: {e}")
+            self.cameraRight = None
+            self.cameraLeft = None
         
         # Setup input handling
         self._appwindow = omni.appwindow.get_default_app_window()
@@ -106,13 +119,16 @@ class SpotRunner(object):
         self._sub_keyboard = self._input.subscribe_to_keyboard_events(
             self._keyboard, self._sub_keyboard_event
         )
-        
+
         # Add physics callback for Spot (cabinet already has its own callback)
         self._world.add_physics_callback("spot_forward", callback_fn=self.on_physics_step)
 
     def on_physics_step(self, step_size) -> None:
         # Handle Spot robot
+        if self._spot is None:
+            return
         if self.first_step:
+            print("Initializing Spot robot")
             self._spot.initialize()
             self.first_step = False
         elif self.needs_reset:
@@ -122,26 +138,6 @@ class SpotRunner(object):
         else:
             self._spot.forward(step_size, self._base_command)
 
-        # Note: Cabinet physics is handled by its own callback in _cabinet_env
-        
-        # TODO Camera controller (same as before)
-        # current_time = time.time()
-        # if current_time - self.last_capture_time >= self.picfreq:
-        #     # Capture image rgb + depth + world coords of the camera
-        #     worldcords = self.cameraRight.get_world_pose()
-        #     rgb = self.cameraRight.get_rgba()
-        #     depth = self.cameraRight.get_depth()
-        #     # Save image using OpenCV
-        #     rgbdId = self.IDcounter 
-        #     self.IDcounter += 1
-        #     
-        #     print("position: ", worldcords)
-        #     
-        #     if rgb is not None:
-        #         self.output_dir.mkdir(parents=True, exist_ok=True)
-        #         rgb_path = self.output_dir / f"spot_camera_{rgbdId}.png"
-        #         cv2.imwrite(str(rgb_path), cv2.cvtColor(rgb, cv2.COLOR_RGBA2BGR))
-        #     self.last_capture_time = current_time
 
     def run(self) -> None:
         while simulation_app.is_running():
