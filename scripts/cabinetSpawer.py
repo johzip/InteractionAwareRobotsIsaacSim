@@ -90,7 +90,7 @@ class FrankaCabinetEnv:
         self._cabinet.initialize()
         
         # Add physics callback
-        self._world.add_physics_callback("franka_cabinet_forward", callback_fn=self.on_physics_step)
+        #self._world.add_physics_callback("franka_cabinet_forward", callback_fn=self.on_physics_step)
         
         self._is_setup = True
 
