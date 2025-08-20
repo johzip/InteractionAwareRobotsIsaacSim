@@ -247,65 +247,14 @@ class SpotCabinetRunner(object):
             self.needs_spot_reset = False
             self.first_step = True
         else:
-            # Update target positions 
-            self._update_arm_targets()
-            
-            # Handle Spot movement through policy
+            # Handle Spot movement
             if np.any(self._base_command != 0):
                 print(f"Spot command: {self._base_command}")
             self._spot.forward(step_size, self._base_command)
-            
-            # FIX: Override the policy's arm actions immediately after
-            self._override_policy_arm_actions()
+            self._handle_arm_control()
 
         # Handle cabinet physics
         self._handle_cabinet_physics(step_size)
-
-    def _update_arm_targets(self):
-        """Update arm target positions based on keyboard input"""
-        if not self.arm_joint_names:
-            return
-            
-        arm_movement = self._get_arm_movement_command()
-        if arm_movement is not None:
-            print(f"Updating arm targets: {arm_movement}")
-            
-            # Update target positions
-            for i, movement in enumerate(arm_movement):
-                if i < len(self.arm_target_positions):
-                    self.arm_target_positions[i] += movement
-                    
-            # Apply joint limits
-            self.arm_target_positions = np.clip(self.arm_target_positions, -3.14, 3.14)
-            print(f"New arm targets: {self.arm_target_positions}")
-
-    def _override_policy_arm_actions(self):
-        """Override policy arm actions with manual commands"""
-        if not self.arm_joint_names or not hasattr(self, 'arm_target_positions'):
-            return
-            
-        try:
-            # Check if we have active arm commands
-            if not (hasattr(self, '_arm_command') and np.any(self._arm_command != 0)):
-                return  # No active arm commands, let policy control
-            
-            # Get current positions and override arm joints
-            current_positions = self._spot.robot.get_joint_positions()
-            
-            # Create new action with manual arm positions
-            full_action = current_positions.copy()
-            for i, target_pos in zip(self.arm_joint_indices, self.arm_target_positions):
-                full_action[i] = target_pos
-            
-            # Apply immediately
-            from isaacsim.core.utils.types import ArticulationAction
-            action = ArticulationAction(joint_positions=np.array(full_action))
-            self._spot.robot.apply_action(action)
-            
-            print("Overrode policy arm actions with manual control")
-            
-        except Exception as e:
-            print(f"Error overriding arm actions: {e}")
 
     def _setup_arm_control(self):
         # Setup direct arm control
@@ -323,7 +272,6 @@ class SpotCabinetRunner(object):
             
             # Initialize arm target positions (current positions)
             current_positions = self._spot.robot.get_joint_positions()
-            print(f"Current joint positions: {current_positions}")
             if self.arm_joint_indices and len(current_positions) > max(self.arm_joint_indices):
                 self.arm_target_positions = [current_positions[i] for i in self.arm_joint_indices]
                 
@@ -424,7 +372,7 @@ class SpotCabinetRunner(object):
         """Get arm movement commands - customize this based on your needs"""
         if hasattr(self, '_arm_command') and np.any(self._arm_command != 0):
             print(f"Arm movement command: {self._arm_command}")
-            return self._arm_command * 0.0001  # Scale down for smooth movement
+            return self._arm_command * 0.01  # Scale down for smooth movement
         return None
 
         # Run OpenVLA inference periodically when in AI mode
@@ -617,23 +565,23 @@ class SpotCabinetRunner(object):
                 self._base_command += np.array(self._input_keyboard_mapping[event.input.name])
                 print(f"New base command: {self._base_command}")
                 
-            # Handle arm movement
+            # FIX: Handle arm movement
             if event.input.name in self._arm_keyboard_mapping:
                 print(f"Arm key pressed: {event.input.name}")
                 self._arm_command += np.array(self._arm_keyboard_mapping[event.input.name])
                 print(f"New arm command: {self._arm_command}")
                 
-        #elif event.type == carb.input.KeyboardEventType.KEY_RELEASE:
-        #    if event.input.name in self._input_keyboard_mapping:
-        #        print(f"Base key released: {event.input.name}")
-        #        self._base_command -= np.array(self._input_keyboard_mapping[event.input.name])
-        #        print(f"New base command: {self._base_command}")
-        #        
-        #    # Handle arm key release
-        #    if event.input.name in self._arm_keyboard_mapping:
-        #        print(f"Arm key released: {event.input.name}")
-        #        self._arm_command -= np.array(self._arm_keyboard_mapping[event.input.name])
-        #        print(f"New arm command: {self._arm_command}")
+        elif event.type == carb.input.KeyboardEventType.KEY_RELEASE:
+            if event.input.name in self._input_keyboard_mapping:
+                print(f"Base key released: {event.input.name}")
+                self._base_command -= np.array(self._input_keyboard_mapping[event.input.name])
+                print(f"New base command: {self._base_command}")
+                
+            # FIX: Handle arm key release
+            if event.input.name in self._arm_keyboard_mapping:
+                print(f"Arm key released: {event.input.name}")
+                self._arm_command -= np.array(self._arm_keyboard_mapping[event.input.name])
+                print(f"New arm command: {self._arm_command}")
                 
         return True
         
