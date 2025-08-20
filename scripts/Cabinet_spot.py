@@ -87,25 +87,31 @@ class SpotCabinetRunner(object):
             "NUMPAD_9": [0.0, 0.0, -1.0], "M": [0.0, 0.0, -1.0],
         }
 
-        #Add arm control parameters
+        # Arm control parameters - based on your joint indices
+        self.arm_joint_indices = [0, 1, 2, 7, 12, 17, 18]  # From your output
+        self.arm_joint_names = ['arm0_sh1', 'arm0_sh0', 'arm0_el0', 'arm0_el1', 'arm0_wr0', 'arm0_wr1', 'arm0_f1x']
+        
         self._arm_command = np.zeros(7)  # 7 DOF arm
         self._arm_keyboard_mapping = {
-            # Arm joint controls based on actual joint names
-            "Q": [0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],  # arm0_sh1
+            "Q": [0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],  # arm0_sh1 (index 0)
             "A": [-0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-            "W": [0.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0],  # arm0_sh0
+            "W": [0.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0],  # arm0_sh0 (index 1)
             "S": [0.0, -0.1, 0.0, 0.0, 0.0, 0.0, 0.0],
-            "E": [0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0],  # arm0_el0
+            "E": [0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0],  # arm0_el0 (index 2)
             "D": [0.0, 0.0, -0.1, 0.0, 0.0, 0.0, 0.0],
-            "R": [0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0],  # arm0_el1
+            "R": [0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0],  # arm0_el1 (index 7)
             "F": [0.0, 0.0, 0.0, -0.1, 0.0, 0.0, 0.0],
-            "T": [0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0],  # arm0_wr0
+            "T": [0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0],  # arm0_wr0 (index 12)
             "G": [0.0, 0.0, 0.0, 0.0, -0.1, 0.0, 0.0],
-            "Y": [0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0],  # arm0_wr1
+            "Y": [0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0],  # arm0_wr1 (index 17)
             "H": [0.0, 0.0, 0.0, 0.0, 0.0, -0.1, 0.0],
-            "U": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1],  # arm0_f1x (gripper)
+            "U": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1],  # arm0_f1x (index 18)
             "J": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.1],
         }
+        
+        # Arm control state
+        self.manual_arm_mode = False
+        self.arm_target_positions = None
 
         self.needs_spot_reset = False
         self.first_step = True
@@ -165,9 +171,9 @@ class SpotCabinetRunner(object):
         )
         print("Spot robot created")
 
-        # Access arm joints after initialization
-        self.arm_joint_names = None
-        self.arm_joint_indices = None
+        print(f"Using pre-defined arm joint indices: {self.arm_joint_indices}")
+        print(f"Using pre-defined arm joint names: {self.arm_joint_names}")
+
 
         # FIX: Only try to load OpenVLA if dependencies are available
         if OPENVLA_AVAILABLE:
@@ -228,17 +234,13 @@ class SpotCabinetRunner(object):
         self._world.add_physics_callback("spot_cabinet_forward", callback_fn=self.on_physics_step)
 
     def on_physics_step(self, step_size) -> None:
-        # Handle Spot robot
         if self._spot is None:
             return
             
         if self.first_step:
             print("Initializing Spot robot...")
             self._spot.initialize()
-
-            #Get arm joint information after initialization
             self._setup_arm_control()
-
             self.first_step = False
             print("Spot robot initialized and ready to move")
         elif self.needs_spot_reset:
@@ -247,23 +249,37 @@ class SpotCabinetRunner(object):
             self.needs_spot_reset = False
             self.first_step = True
         else:
-            # Update target positions 
-            self._update_arm_targets()
+            # Determine if we're in manual arm control mode
+            self.manual_arm_mode = np.any(self._arm_command != 0)
             
-            # Handle Spot movement through policy
-            if np.any(self._base_command != 0):
-                print(f"Spot command: {self._base_command}")
-            self._spot.forward(step_size, self._base_command)
-            
-            # FIX: Override the policy's arm actions immediately after
-            self._override_policy_arm_actions()
+            if self.manual_arm_mode:
+                # Update arm targets based on keyboard input
+                self._update_arm_targets()
+                
+                # Forward with manual arm control
+                if np.any(self._base_command != 0):
+                    print(f"Spot base command: {self._base_command}")
+                    
+                print(f"Spot movement Command params \n armPos: {self.arm_target_positions}  \n baseCommand: {self._base_command}")
+
+                self._spot.forward(
+                    step_size, 
+                    self._base_command,
+                    manual_arm_control=True,
+                    arm_targets=self.arm_target_positions
+                )
+            else:
+                # Normal policy control for everything
+                if np.any(self._base_command != 0):
+                    print(f"Spot command (full policy): {self._base_command}")
+                self._spot.forward(step_size, self._base_command)
 
         # Handle cabinet physics
         self._handle_cabinet_physics(step_size)
 
     def _update_arm_targets(self):
         """Update arm target positions based on keyboard input"""
-        if not self.arm_joint_names:
+        if self.arm_target_positions is None:
             return
             
         arm_movement = self._get_arm_movement_command()
@@ -308,76 +324,29 @@ class SpotCabinetRunner(object):
             print(f"Error overriding arm actions: {e}")
 
     def _setup_arm_control(self):
-        # Setup direct arm control
+        """Setup arm control with known joint indices"""
         try:
-            # Use the correct method to get joint names
             all_joint_names = self._spot.robot.dof_names
             print(f"All robot joints: {all_joint_names}")
+            print(f"Pre-defined arm joint indices: {self.arm_joint_indices}")
+            print(f"Pre-defined arm joint names: {self.arm_joint_names}")
             
-            # Identify arm joints by name (they contain 'arm0_')
-            self.arm_joint_names = [name for name in all_joint_names if 'arm0_' in name]
-            self.arm_joint_indices = [all_joint_names.index(name) for name in self.arm_joint_names]
-        
-            print(f"Detected arm joints: {self.arm_joint_names}")
-            print(f"Arm joint indices: {self.arm_joint_indices}")
-            
-            # Initialize arm target positions (current positions)
+            # Initialize arm target positions from current positions
             current_positions = self._spot.robot.get_joint_positions()
             print(f"Current joint positions: {current_positions}")
-            if self.arm_joint_indices and len(current_positions) > max(self.arm_joint_indices):
-                self.arm_target_positions = [current_positions[i] for i in self.arm_joint_indices]
-                
-                # Use default values for arm properties (since get_robot_joint_properties failed)
-                self.arm_default_positions = [current_positions[i] for i in self.arm_joint_indices]
-                self.arm_stiffness = [1000.0] * len(self.arm_joint_names)
-                self.arm_damping = [100.0] * len(self.arm_joint_names)
-                
-                print(f"Arm control setup complete. Arm has {len(self.arm_joint_names)} joints.")
-                print(f"Arm current positions: {self.arm_target_positions}")
-            else:
-                raise ValueError("Could not access arm joint positions")
-                    
+            
+            # Extract initial arm positions
+            self.arm_target_positions = current_positions[self.arm_joint_indices].copy()
+            self.arm_initial_positions = self.arm_target_positions.copy()
+            
+            print(f"✅ Arm control setup complete with {len(self.arm_joint_names)} joints.")
+            print(f"Initial arm positions: {self.arm_target_positions}")
+            
         except Exception as e:
-            print(f"Error setting up arm control: {e}")
-            # Final fallback - use the visible joint names
-            try:
-                all_joint_names = self._spot.robot.dof_names
-                print(f"Final fallback: All joints = {all_joint_names}")
-                
-                # Based on the output, arm joints are: arm0_sh1, arm0_sh0, arm0_el0, arm0_el1, arm0_wr0, arm0_wr1, arm0_f1x
-                arm_joint_names_expected = ['arm0_sh1', 'arm0_sh0', 'arm0_el0', 'arm0_el1', 'arm0_wr0', 'arm0_wr1', 'arm0_f1x']
-                
-                self.arm_joint_names = []
-                self.arm_joint_indices = []
-                
-                for name in arm_joint_names_expected:
-                    if name in all_joint_names:
-                        self.arm_joint_names.append(name)
-                        self.arm_joint_indices.append(all_joint_names.index(name))
-                
-                if self.arm_joint_names:
-                    current_positions = self._spot.robot.get_joint_positions()
-                    self.arm_target_positions = [current_positions[i] for i in self.arm_joint_indices]
-                    
-                    # Use current positions as defaults
-                    self.arm_default_positions = self.arm_target_positions.copy()
-                    self.arm_stiffness = [1000.0] * len(self.arm_joint_names)
-                    self.arm_damping = [100.0] * len(self.arm_joint_names)
-                    
-                    print(f"✅ Final fallback arm control setup with {len(self.arm_joint_names)} joints.")
-                    print(f"Arm joints: {self.arm_joint_names}")
-                    print(f"Arm indices: {self.arm_joint_indices}")
-                else:
-                    self.arm_joint_names = []
-                    self.arm_joint_indices = []
-                    self.arm_target_positions = []
-                    print("❌ Could not identify any arm joints")
-                        
-            except Exception as e2:
-                print(f"Final fallback also failed: {e2}")
-                self.arm_joint_names = []
-                self.arm_joint_indices = []
-                self.arm_target_positions = []
+            print(f"❌ Error setting up arm control: {e}")
+            self.arm_joint_names = []
+            self.arm_joint_indices = []
+            self.arm_target_positions = None
 
 
     def _handle_arm_control(self):
@@ -421,68 +390,10 @@ class SpotCabinetRunner(object):
             print(f"Error in arm control: {e}")
 
     def _get_arm_movement_command(self):
-        """Get arm movement commands - customize this based on your needs"""
+        """Get arm movement commands from keyboard"""
         if hasattr(self, '_arm_command') and np.any(self._arm_command != 0):
-            print(f"Arm movement command: {self._arm_command}")
-            return self._arm_command * 0.0001  # Scale down for smooth movement
+            return self._arm_command * 0.01  # Scale for smooth movement
         return None
-
-        # Run OpenVLA inference periodically when in AI mode
-        ai_mode = False
-        last_ai_time = 0
-        ai_interval = 3.0  # Run AI every 3 seconds
-        if (self.openvla_ready and ai_mode and cameras_ready and 
-            self.processor and self.vla and self.IDcounter > 0):
-            
-            current_time = time.time()
-            if current_time - last_ai_time >= ai_interval:
-                try:
-                    last_ai_time = current_time
-                    
-                    image_folder = "/home/zipfelj/data/zipfel/spot_images"
-                    if os.path.exists(image_folder):
-                        image_files = sorted(
-                            [f for f in os.listdir(image_folder) if f.lower().endswith((".png", ".jpg", ".jpeg"))],
-                            key=lambda x: os.path.getmtime(os.path.join(image_folder, x)),
-                            reverse=True
-                        )
-                        
-                        if image_files:
-                            newest_image_path = os.path.join(image_folder, image_files[0])
-                            image = Image.open(newest_image_path).convert("RGB")
-                            prompt = "open the top cabinet drawer"
-
-                            print(f"🤖 Running AI inference on {newest_image_path}")
-                            
-                            # Predict Action
-                            inputs = self.processor(prompt, image).to("cuda:0", dtype=torch.bfloat16)
-                            action = self.vla.predict_action(**inputs, unnorm_key="bridge_orig", do_sample=False)
-                            
-                            # Convert to base command (use first 3 elements, scale down)
-                            if len(action) >= 3:
-                                ai_command = np.array(action[:3]) * 0.1  # Scale for safety
-                                print(f"AI command: {ai_command}")
-                                
-                                # Apply AI command only if no manual input
-                                if np.allclose(self._base_command, 0):
-                                    self._base_command = ai_command.copy()
-                                else:
-                                    print("Manual input detected - skipping AI command")
-                        
-                except Exception as e:
-                    print(f"AI inference error: {e}")
-        
-        # Example: Return None for no movement, or array of joint movements
-        
-        # You could add keyboard controls for arm:
-        # if self._arm_command is not None:
-        #     return self._arm_command
-        
-        # Or return AI-generated arm commands:
-        # if hasattr(self, 'ai_arm_command'):
-        #     return self.ai_arm_command
-            
-        return None  # No arm movement by default
 
     def _handle_cabinet_physics(self, step_size):
         """Handle cabinet physics and interaction"""
@@ -530,11 +441,12 @@ class SpotCabinetRunner(object):
         self.needs_cabinet_reset = False
 
     def run(self) -> None:
-        print("Starting simulation - use arrow keys or numpad to move Spot")
-        print("Cabinet drawer will reset automatically when opened too far")
-        print("Arm controls:")
+        print("Starting simulation")
+        print("Base controls: Arrow keys or numpad to move Spot")
+        print("Arm controls (individual joints):")
         print("  Q/A: arm0_sh1, W/S: arm0_sh0, E/D: arm0_el0")
         print("  R/F: arm0_el1, T/G: arm0_wr0, Y/H: arm0_wr1, U/J: arm0_f1x")
+        print("  P: Reset arm to initial position")
         print("Cabinet drawer will reset automatically when opened too far")
         if self.openvla_ready:
             print("🤖 Press 'O' to toggle AI control mode")
@@ -611,6 +523,13 @@ class SpotCabinetRunner(object):
                     print("OpenVLA not available")
                 return True
             
+            # Reset arm to initial position with 'P' key
+            if event.input.name == "P":
+                if self.arm_target_positions is not None:
+                    self.arm_target_positions = self.arm_initial_positions.copy()
+                    print(f"Reset arm to initial position: {self.arm_target_positions}")
+                return True
+            
             # Handle base movement
             if event.input.name in self._input_keyboard_mapping:
                 print(f"Base key pressed: {event.input.name}")
@@ -619,47 +538,27 @@ class SpotCabinetRunner(object):
                 
             # Handle arm movement
             if event.input.name in self._arm_keyboard_mapping:
+                joint_movement = np.array(self._arm_keyboard_mapping[event.input.name])
                 print(f"Arm key pressed: {event.input.name}")
-                self._arm_command += np.array(self._arm_keyboard_mapping[event.input.name])
-                print(f"New arm command: {self._arm_command}")
+                print(f"  Joint movement: {joint_movement}")
+                self._arm_command += joint_movement
+                print(f"  New arm command: {self._arm_command}")
                 
-        #elif event.type == carb.input.KeyboardEventType.KEY_RELEASE:
-        #    if event.input.name in self._input_keyboard_mapping:
-        #        print(f"Base key released: {event.input.name}")
-        #        self._base_command -= np.array(self._input_keyboard_mapping[event.input.name])
-        #        print(f"New base command: {self._base_command}")
-        #        
-        #    # Handle arm key release
-        #    if event.input.name in self._arm_keyboard_mapping:
-        #        print(f"Arm key released: {event.input.name}")
-        #        self._arm_command -= np.array(self._arm_keyboard_mapping[event.input.name])
-        #        print(f"New arm command: {self._arm_command}")
+        elif event.type == carb.input.KeyboardEventType.KEY_RELEASE:
+            if event.input.name in self._input_keyboard_mapping:
+                print(f"Base key released: {event.input.name}")
+                self._base_command -= np.array(self._input_keyboard_mapping[event.input.name])
+                print(f"New base command: {self._base_command}")
+                
+            # Handle arm key release
+            if event.input.name in self._arm_keyboard_mapping:
+                joint_movement = np.array(self._arm_keyboard_mapping[event.input.name])
+                print(f"Arm key released: {event.input.name}")
+                self._arm_command -= joint_movement
+                print(f"  New arm command: {self._arm_command}")
                 
         return True
-        
-        #if event.type == carb.input.KeyboardEventType.KEY_PRESS:
-        #    # Toggle AI mode with 'O' key
-        #    if event.input.name == "O":
-        #        if self.openvla_ready:
-        #            ai_mode = not getattr(self, '_ai_mode', False)
-        #            self._ai_mode = ai_mode
-        #            mode = "AI" if ai_mode else "Manual"
-        #            print(f"Switched to {mode} control mode")
-        #        else:
-        #            print("OpenVLA not available")
-        #        return True
-        #    
-        #    if event.input.name in self._input_keyboard_mapping:
-        #        print(f"Key pressed: {event.input.name}")
-        #        self._base_command += np.array(self._input_keyboard_mapping[event.input.name])
-        #        print(f"New command: {self._base_command}")
-        #elif event.type == carb.input.KeyboardEventType.KEY_RELEASE:
-        #    if event.input.name in self._input_keyboard_mapping:
-        #        print(f"Key released: {event.input.name}")
-        #        self._base_command -= np.array(self._input_keyboard_mapping[event.input.name])
-        #        print(f"New command: {self._base_command}")
-        #return True
-
+    
     def get_cabinet(self):
         return self._cabinet
     
