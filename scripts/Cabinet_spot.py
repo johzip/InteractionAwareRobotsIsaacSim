@@ -112,7 +112,8 @@ class SpotCabinetRunner(object):
         # Arm control state
         self.manual_arm_mode = False
         self.arm_target_positions = None
-
+        self.arm_has_been_moved = False  
+        self.arm_movement_threshold = 0.01
         self.needs_spot_reset = False
         self.first_step = True
 
@@ -249,19 +250,22 @@ class SpotCabinetRunner(object):
             self.needs_spot_reset = False
             self.first_step = True
         else:
-            # Determine if we're in manual arm control mode
-            self.manual_arm_mode = np.any(self._arm_command != 0)
+            # FIX: Use persistent arm movement logic
+            keys_currently_pressed = np.any(self._arm_command != 0)
+            arm_moved_from_initial = self._check_if_arm_moved()
             
-            if self.manual_arm_mode:
+            # Manual arm mode if keys are pressed OR arm has been moved from initial position
+            self.manual_arm_mode = keys_currently_pressed or arm_moved_from_initial
+            
+            if keys_currently_pressed:
                 # Update arm targets based on keyboard input
                 self._update_arm_targets()
-                
-                # Forward with manual arm control
+
+            if self.manual_arm_mode:                
+                # Forward with manual arm control (even if no keys are currently pressed)
                 if np.any(self._base_command != 0):
                     print(f"Spot base command: {self._base_command}")
                     
-                print(f"Spot movement Command params \n armPos: {self.arm_target_positions}  \n baseCommand: {self._base_command}")
-
                 self._spot.forward(
                     step_size, 
                     self._base_command,
@@ -273,9 +277,31 @@ class SpotCabinetRunner(object):
                 if np.any(self._base_command != 0):
                     print(f"Spot command (full policy): {self._base_command}")
                 self._spot.forward(step_size, self._base_command)
+                print("🤖 Using full policy control")
 
         # Handle cabinet physics
         self._handle_cabinet_physics(step_size)
+
+    def _check_if_arm_moved(self):
+        """Check if arm has been moved significantly from its initial position"""
+        if self.arm_target_positions is None or not hasattr(self, 'arm_initial_positions'):
+            return False
+        
+        # Calculate the difference between current and initial positions
+        position_diff = np.abs(np.array(self.arm_target_positions) - np.array(self.arm_initial_positions))
+        max_diff = np.max(position_diff)
+        
+        moved = max_diff > self.arm_movement_threshold
+        
+        # FIX: Update the flag and print status changes
+        if moved != self.arm_has_been_moved:
+            self.arm_has_been_moved = moved
+            if moved:
+                print("🦾 Arm moved from initial position - switched to persistent manual arm control")
+            else:
+                print("🦾 Arm returned to initial position - switched to policy control")
+        
+        return moved
 
     def _update_arm_targets(self):
         """Update arm target positions based on keyboard input"""
@@ -294,6 +320,8 @@ class SpotCabinetRunner(object):
             # Apply joint limits
             self.arm_target_positions = np.clip(self.arm_target_positions, -3.14, 3.14)
             print(f"New arm targets: {self.arm_target_positions}")
+
+            self.arm_has_been_moved = True
 
     def _override_policy_arm_actions(self):
         """Override policy arm actions with manual commands"""
@@ -446,7 +474,9 @@ class SpotCabinetRunner(object):
         print("Arm controls (individual joints):")
         print("  Q/A: arm0_sh1, W/S: arm0_sh0, E/D: arm0_el0")
         print("  R/F: arm0_el1, T/G: arm0_wr0, Y/H: arm0_wr1, U/J: arm0_f1x")
-        print("  P: Reset arm to initial position")
+        print("  P: Reset arm to initial position and return to policy control")
+        print("💡 Arm will stay in position after you release keys!")
+        print("💡 Use 'P' to reset arm and return full control to policy")
         print("Cabinet drawer will reset automatically when opened too far")
         if self.openvla_ready:
             print("🤖 Press 'O' to toggle AI control mode")
@@ -523,11 +553,13 @@ class SpotCabinetRunner(object):
                     print("OpenVLA not available")
                 return True
             
-            # Reset arm to initial position with 'P' key
+            # Reset arm to initial position with 'P' key AND return to policy control
             if event.input.name == "P":
                 if self.arm_target_positions is not None:
                     self.arm_target_positions = self.arm_initial_positions.copy()
-                    print(f"Reset arm to initial position: {self.arm_target_positions}")
+                    self.arm_has_been_moved = False  # Reset the moved flag
+                    print(f"🦾 Reset arm to initial position and returned to policy control")
+                    print(f"Initial arm targets: {self.arm_target_positions}")
                 return True
             
             # Handle base movement
