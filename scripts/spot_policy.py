@@ -184,7 +184,7 @@ class SpotArmFlatTerrainPolicy(PolicyController):
 
         return obs
 
-    def forward(self, dt, command):
+    def forward(self, dt, command, manual_arm_control=False, arm_targets=None):
         """
         Compute the desired torques and apply them to the articulation
 
@@ -196,6 +196,13 @@ class SpotArmFlatTerrainPolicy(PolicyController):
         if self._policy_counter % self._decimation == 0:
             obs = self._compute_observation(command)
             self.action = self._compute_action(obs)
+
+            #if manual_arm_control and arm_targets is not None:
+            #    # Keep leg actions from policy, replace arm actions with manual targets
+            #    leg_actions = self.action[:12]  # Assume first 12 are legs
+            #    arm_actions = np.array(arm_targets) - self.default_pos[12:19]  # Convert to relative
+            #    self.action = np.concatenate([leg_actions, arm_actions])
+
             self._previous_action = self.action.copy()
 
         action = ArticulationAction(joint_positions=self.default_pos + (self.action * self._action_scale))
