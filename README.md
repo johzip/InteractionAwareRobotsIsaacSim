@@ -8,4 +8,4 @@ then add this repo to the root folder of isaac sim so that script is in the root
 if there needs to be aditional installations like openVLA, run with ./python.sh
 
 # Usage: 
-run ```console ./python.sh ./scripts/Cabinet_spot.py ```
+run ``` ./python.sh ./scripts/Cabinet_spot.py ```
