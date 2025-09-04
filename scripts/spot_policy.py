@@ -139,7 +139,7 @@ class SpotArmFlatTerrainPolicy(PolicyController):
 
         super().__init__(name, prim_path, root_path, usd_path, position, orientation)
 
-        self.arm_joint_indices = [0, 1, 2, 7, 12, 17, 18]  # arm0_sh1, arm0_sh0, arm0_el0, arm0_el1, arm0_wr0, arm0_wr1, arm0_f1x
+        self.arm_joint_indices = [0, 1, 2, 7, 12, 17]  # arm0_sh1, arm0_sh0, arm0_el0, arm0_el1, arm0_wr0, arm0_wr1
         self.leg_joint_indices = [3, 4, 5, 6, 8, 9, 10, 11, 13, 14, 15, 16]  # All non-arm joints
 
         self.load_policy(policy_path, policy_params_path)
@@ -196,6 +196,9 @@ class SpotArmFlatTerrainPolicy(PolicyController):
         command (np.ndarray) -- the robot command (v_x, v_y, w_z)
 
         """
+
+        #print(f"joint positions: {self.robot.get_joint_positions()}")
+
         if self._policy_counter % self._decimation == 0:
             obs = self._compute_observation(command)
             self.action = self._compute_action(obs)
@@ -212,9 +215,29 @@ class SpotArmFlatTerrainPolicy(PolicyController):
 
         if manual_arm_control:
             current_joint_pos = self.robot.get_joint_positions()
+            arm_changes = arm_changes * 0.0005  # Scale down changes for smoother control
             new_arm_changes = np.array(arm_changes)
-            current_joint_pos[self.arm_joint_indices] += new_arm_changes
-            action.joint_positions[self.arm_joint_indices] = current_joint_pos[self.arm_joint_indices]
+            updated_arm_pos = current_joint_pos[self.arm_joint_indices] + new_arm_changes
+
+            # Define joint limits for each arm joint
+            arm_joint_limits = [
+                (0.0, np.deg2rad(179.99985)),         # arm0_sh1: 0° to 180°
+                (np.deg2rad(-179.99985), np.deg2rad(30.00001)),   # arm0_sh0: -180° to 30°
+                (np.deg2rad(-160.00018), np.deg2rad(160.00018)),  # arm0_el0: -160° to 160°
+                (np.deg2rad(-105.00024), np.deg2rad(105.00024)),  # arm0_el1: -105° to 105°
+                (np.deg2rad(-165.00554), np.deg2rad(164.9998)),   # arm0_wr0: -165° to 165°
+                (np.deg2rad(-90.00021), 0.0),         # arm0_wr1: -90° to 0°
+            ]
+
+            # Enforce joint limits
+            for i, (low, high) in enumerate(arm_joint_limits):
+                if low is not None and updated_arm_pos[i] < low:
+                    updated_arm_pos[i] = low
+                if high is not None and updated_arm_pos[i] > high:
+                    updated_arm_pos[i] = high
+
+            action.joint_positions[self.arm_joint_indices] = updated_arm_pos
+
             print(f"arm_changes: {arm_changes}")
             print(f"current_joint_pos[self.arm_joint_indices]: {current_joint_pos[self.arm_joint_indices]}")
             print(f"action.joint_positions[self.arm_joint_indices]: {action.joint_positions[self.arm_joint_indices]}")
