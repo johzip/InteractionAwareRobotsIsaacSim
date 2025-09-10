@@ -203,12 +203,6 @@ class SpotArmFlatTerrainPolicy(PolicyController):
             obs = self._compute_observation(command)
             self.action = self._compute_action(obs)
 
-            #if manual_arm_control and arm_targets is not None:
-            #    # Keep leg actions from policy, replace arm actions with manual targets
-            #    leg_actions = self.action[:12]  # Assume first 12 are legs
-            #    arm_actions = np.array(arm_targets) - self.default_pos[12:19]  # Convert to relative
-            #    self.action = np.concatenate([leg_actions, arm_actions])
-
             self._previous_action = self.action.copy()
 
         action = ArticulationAction(joint_positions=self.default_pos + (self.action * self._action_scale))
@@ -217,16 +211,21 @@ class SpotArmFlatTerrainPolicy(PolicyController):
             current_joint_pos = self.robot.get_joint_positions()
             arm_changes = arm_changes * 0.0005  # Scale down changes for smoother control
             new_arm_changes = np.array(arm_changes)
-            updated_arm_pos = current_joint_pos[self.arm_joint_indices] + new_arm_changes
 
+            
+            updated_arm_pos = current_joint_pos[self.arm_joint_indices] + new_arm_changes
+        
             # Define joint limits for each arm joint
             arm_joint_limits = [
-                (0.0, np.deg2rad(179.99985)),         # arm0_sh1: 0° to 180°
-                (np.deg2rad(-179.99985), np.deg2rad(30.00001)),   # arm0_sh0: -180° to 30°
-                (np.deg2rad(-160.00018), np.deg2rad(160.00018)),  # arm0_el0: -160° to 160°
-                (np.deg2rad(-105.00024), np.deg2rad(105.00024)),  # arm0_el1: -105° to 105°
-                (np.deg2rad(-165.00554), np.deg2rad(164.9998)),   # arm0_wr0: -165° to 165°
-                (np.deg2rad(-90.00021), 0.0),         # arm0_wr1: -90° to 0°
+                (np.deg2rad(-179.99985), np.deg2rad(30.00001)),   # arm0_sh1: -180° to 30°
+                (np.deg2rad(-149.99977), np.deg2rad(179.99985)),  # arm0_sh0: -150° to 179.99985°
+                (0.0, np.deg2rad(179.99985)),                     # arm0_el0: 0° to 180°
+                (np.deg2rad(-160.00018), np.deg2rad(160.00018)),  # arm0_el1: -160° to 160°
+                (np.deg2rad(-105.00024), np.deg2rad(105.00024)),  # arm0_wr0: -105° to 105°
+                (np.deg2rad(-165.00554), np.deg2rad(164.9998)),   # arm0_wr1: -165° to 165°
+                
+                
+                
             ]
 
             # Enforce joint limits
