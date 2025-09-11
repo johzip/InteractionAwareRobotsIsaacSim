@@ -65,7 +65,7 @@ class SpotCabinetRunner(object):
         
         # Setup cabinet scene
         self._setup_cabinet_scene()
-        
+
         # Setup Spot robot parameters
         self.policy_path = os.path.join(BASE_DIR, "Assets/spot_robots/policies/spot_arm/models", "spot_arm_policy.pt")
         self.policy_params_path = os.path.join(BASE_DIR, "Assets/spot_robots/policies/spot_arm/params", "env.yaml")
@@ -86,14 +86,13 @@ class SpotCabinetRunner(object):
             "M": [0.0, 0.0, -1.0],
         }
 
-        # Arm control parameters - based on your joint indices
         #self.arm_joint_indices = [0, 1, 2, 7, 12, 17]  # From your output
         #self.arm_joint_names = ['arm0_sh1', 'arm0_sh0', 'arm0_el0', 'arm0_el1', 'arm0_wr0', 'arm0_wr1']
         
         self.arm_joint_indices = []
         self.arm_joint_names = []
 
-        self._arm_command = np.zeros(7)  # 6 DOF arm + the buggy arm0_f1x
+        self._arm_command = np.zeros(7)  
         self._arm_keyboard_mapping = {
             "NUMPAD_1": [1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],   # arm0_sh1 (index 0) - positive
             "NUMPAD_2": [-3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],  # arm0_sh1 (index 0) - negative
@@ -111,7 +110,6 @@ class SpotCabinetRunner(object):
             "NUMPAD_6": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1],
         }
         
-        # Simplified arm control state - no more target positions!
         self.manual_arm_mode = False
         self.needs_spot_reset = False
         self.first_step = True
@@ -131,6 +129,83 @@ class SpotCabinetRunner(object):
         self.openvla_ready = False
         self.processor = None
         self.vla = None
+
+    def _set_viewport_camera(self):
+        """Set the main Isaac Sim viewport camera position using stage manipulation"""
+        try:
+            import omni.usd
+            from pxr import UsdGeom, Gf
+            import math
+            
+            # Get the stage
+            stage = omni.usd.get_context().get_stage()
+            if not stage:
+                print("⚠️ Could not get USD stage")
+                return
+            
+            # Try to find the perspective camera
+            camera_paths = [
+                "/Perspective",         # Alternative path
+                "/Camera",              # Another alternative
+            ]
+            
+            camera_prim = None
+            used_path = None
+            
+            for path in camera_paths:
+                camera_prim = stage.GetPrimAtPath(path)
+                if camera_prim.IsValid():
+                    used_path = path
+                    break
+            
+            if not camera_prim or not camera_prim.IsValid():
+                print("⚠️ Could not find viewport camera prim")
+                return
+            
+            print(f"Found camera at: {used_path}")
+            
+            # Get the camera as a transformable object
+            xformable = UsdGeom.Xformable(camera_prim)
+            
+            # FIX: Get existing transform operations and modify them
+            existing_ops = xformable.GetOrderedXformOps()
+            
+            if existing_ops:
+                print(f"Found {len(existing_ops)} existing transform operations")
+                
+                # Find and modify existing operations
+                for op in existing_ops:
+                    if op.GetOpType() == UsdGeom.XformOp.TypeTranslate:
+                        # Modify existing translate operation
+                        op.Set(Gf.Vec3d(10.0, -1.6, 4.6))  # 9 meters left
+                        print("✅ Modified existing translate operation")
+                    elif op.GetOpType() == UsdGeom.XformOp.TypeRotateXYZ:
+                        # Modify existing rotation operation
+                        op.Set(Gf.Vec3f(
+                            math.radians(60),  # Pitch down 20°
+                            math.radians(0),  # Yaw left toward center
+                            math.radians(95)     # No roll
+                        ))
+                        print("✅ Modified existing rotate operation")
+            else:
+                # No existing operations, safe to create new ones
+                print("No existing operations, creating new ones")
+                translate_op = xformable.AddTranslateOp()
+                translate_op.Set(Gf.Vec3d(10.0, -1.6, 4.6))
+                
+                rotate_xyz_op = xformable.AddRotateXYZOp()
+                rotate_xyz_op.Set(Gf.Vec3f(
+                    math.radians(60),  # Pitch down 20°
+                    math.radians(0),  # Yaw left toward center
+                    math.radians(95)     # No roll
+                ))
+                print("✅ Created new transform operations")
+            
+            print("✅ Viewport camera positioned")
+            
+        except Exception as e:
+            print(f"⚠️ Camera setting failed: {e}")
+            print("Using default camera position")
 
     def _setup_cabinet_scene(self):
         """Setup the cabinet scene"""
@@ -171,29 +246,7 @@ class SpotCabinetRunner(object):
             position=self.spot_position,
         )
         print("Spot robot created")
-
-        # DEBUG: Print actual joint information
-        if hasattr(self._spot, 'robot') and hasattr(self._spot.robot, 'dof_names'):
-            all_joints = self._spot.robot.dof_names
-            print(f"ALL ROBOT JOINTS: {all_joints}")
-            
-            # Find actual arm joint indices
-            actual_arm_indices = []
-            actual_arm_names = []
-            for i, name in enumerate(all_joints):
-                if 'arm0_' in name:
-                    actual_arm_indices.append(i)
-                    actual_arm_names.append(name)
-            
-            print(f"ACTUAL ARM JOINT INDICES: {actual_arm_indices}")
-            print(f"ACTUAL ARM JOINT NAMES: {actual_arm_names}")
-            
-            # Update the indices
-            self.arm_joint_indices = actual_arm_indices
-            self.arm_joint_names = actual_arm_names
-            
-            print(f"UPDATED arm_joint_indices: {self.arm_joint_indices}")
-
+        self._set_viewport_camera()
         
         if OPENVLA_AVAILABLE:
             try:
@@ -250,7 +303,6 @@ class SpotCabinetRunner(object):
 
         # Add unified physics callback
         self._world.add_physics_callback("spot_cabinet_forward", callback_fn=self.on_physics_step)
-
     
     def on_physics_step(self, step_size) -> None:
         if self._spot is None:
@@ -261,6 +313,56 @@ class SpotCabinetRunner(object):
             self._spot.initialize()
             self.first_step = False
             print("Spot robot initialized and ready to move")
+            if hasattr(self._spot, 'robot') and hasattr(self._spot.robot, 'dof_names'):
+                all_joints = self._spot.robot.dof_names
+                print(f"ALL ROBOT JOINTS: {all_joints}")
+                
+                # Find actual arm joint indices
+                actual_arm_indices = []
+                actual_arm_names = []
+                for i, name in enumerate(all_joints):
+                    if 'arm0_' in name:
+                        actual_arm_indices.append(i)
+                        actual_arm_names.append(name)
+                
+                print(f"ACTUAL ARM JOINT INDICES: {actual_arm_indices}")
+                print(f"ACTUAL ARM JOINT NAMES: {actual_arm_names}")
+                
+                # Update the indices
+                self.arm_joint_indices = actual_arm_indices
+                self.arm_joint_names = actual_arm_names
+                
+                print(f"UPDATED arm_joint_indices: {self.arm_joint_indices}")
+
+                if self.arm_joint_indices:
+                    initial_arm_positions = np.array([
+                        np.deg2rad(-170),   # arm0_sh1: -90° (shoulder pitch)
+                        np.deg2rad(-100),     # arm0_sh0: 0° (shoulder roll)
+                        np.deg2rad(0),    # arm0_el0: 90° (elbow)
+                        np.deg2rad(0),     # arm0_el1: 0° (elbow twist)
+                        np.deg2rad(0),     # arm0_wr0: 0° (wrist roll)
+                        np.deg2rad(0),     # arm0_wr1: 0° (wrist pitch)
+                        np.deg2rad(20),     # arm0_f1x: 0° (gripper if present)
+                    ])
+                    
+                    # Trim to match actual number of discovered joints
+                    initial_arm_positions = initial_arm_positions[:len(self.arm_joint_indices)]
+                    
+                    print(f"Setting initial arm positions: {np.rad2deg(initial_arm_positions)} degrees")
+                    
+                    # Get current all joint positions
+                    current_positions = self._spot.robot.get_joint_positions()
+                    
+                    # Update only the arm joints
+                    new_positions = current_positions.copy()
+                    new_positions[self.arm_joint_indices] = initial_arm_positions
+                    
+                    # Apply the new positions
+                    from isaacsim.core.utils.types import ArticulationAction
+                    action = ArticulationAction(joint_positions=new_positions)
+                    self._spot.robot.apply_action(action)
+                    
+                print("✅ Initial arm positions set!")
         elif self.needs_spot_reset:
             print("Resetting Spot...")
             self._world.reset(True)
@@ -273,7 +375,6 @@ class SpotCabinetRunner(object):
             # Get current arm movement command
             arm_movement = self._get_arm_movement_command()
             
-            # FIX: ALWAYS use manual arm control mode to prevent arm reset
             if self.manual_arm_mode and arm_movement is not None:
                 # Active arm movement
                 if np.any(self._base_command != 0):
@@ -424,7 +525,6 @@ class SpotCabinetRunner(object):
     def _sub_keyboard_event(self, event, *args, **kwargs) -> bool:
         if event.type == carb.input.KeyboardEventType.KEY_PRESS:
             
-            # FIX: Handle arm movement FIRST, before AI toggle
             if event.input.name in self._arm_keyboard_mapping:
                 joint_movement = np.array(self._arm_keyboard_mapping[event.input.name])
                 print(f"Arm key pressed: {event.input.name}")
