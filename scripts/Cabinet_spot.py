@@ -168,8 +168,27 @@ class SpotCabinetRunner(object):
         )
         print("Spot robot created")
 
-        print(f"Using pre-defined arm joint indices: {self.arm_joint_indices}")
-        print(f"Using pre-defined arm joint names: {self.arm_joint_names}")
+        # DEBUG: Print actual joint information
+        if hasattr(self._spot, 'robot') and hasattr(self._spot.robot, 'dof_names'):
+            all_joints = self._spot.robot.dof_names
+            print(f"ALL ROBOT JOINTS: {all_joints}")
+            
+            # Find actual arm joint indices
+            actual_arm_indices = []
+            actual_arm_names = []
+            for i, name in enumerate(all_joints):
+                if 'arm0_' in name:
+                    actual_arm_indices.append(i)
+                    actual_arm_names.append(name)
+            
+            print(f"ACTUAL ARM JOINT INDICES: {actual_arm_indices}")
+            print(f"ACTUAL ARM JOINT NAMES: {actual_arm_names}")
+            
+            # Update the indices
+            self.arm_joint_indices = actual_arm_indices
+            self.arm_joint_names = actual_arm_names
+            
+            print(f"UPDATED arm_joint_indices: {self.arm_joint_indices}")
 
         
         if OPENVLA_AVAILABLE:
