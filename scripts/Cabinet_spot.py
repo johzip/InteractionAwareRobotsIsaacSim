@@ -93,7 +93,7 @@ class SpotCabinetRunner(object):
         self._arm_command = np.zeros(6)  # 6 DOF arm + the buggy arm0_f1x
         self._arm_keyboard_mapping = {
             "NUMPAD_1": [1, 0.0, 0.0, 0.0, 0.0, 0.0],   # arm0_sh1 (index 0) - positive
-            "NUMPAD_2": [-1, 0.0, 0.0, 0.0, 0.0, 0.0],  # arm0_sh1 (index 0) - negative
+            "NUMPAD_2": [-3, 0.0, 0.0, 0.0, 0.0, 0.0],  # arm0_sh1 (index 0) - negative
             "U": [0.0, 1, 0.0, 0.0, 0.0, 0.0],   # arm0_sh0 (index 1) - positive
             "J": [0.0, -1, 0.0, 0.0, 0.0, 0.0],  # arm0_sh0 (index 1) - negative
             "I": [0.0, 0.0, 1, 0.0, 0.0, 0.0],   # arm0_el0 (index 2) - positive
