@@ -87,25 +87,28 @@ class SpotCabinetRunner(object):
         }
 
         # Arm control parameters - based on your joint indices
-        self.arm_joint_indices = [0, 1, 2, 7, 12, 17]  # From your output
-        self.arm_joint_names = ['arm0_sh1', 'arm0_sh0', 'arm0_el0', 'arm0_el1', 'arm0_wr0', 'arm0_wr1']
+        #self.arm_joint_indices = [0, 1, 2, 7, 12, 17]  # From your output
+        #self.arm_joint_names = ['arm0_sh1', 'arm0_sh0', 'arm0_el0', 'arm0_el1', 'arm0_wr0', 'arm0_wr1']
         
-        self._arm_command = np.zeros(6)  # 6 DOF arm + the buggy arm0_f1x
+        self.arm_joint_indices = []
+        self.arm_joint_names = []
+
+        self._arm_command = np.zeros(7)  # 6 DOF arm + the buggy arm0_f1x
         self._arm_keyboard_mapping = {
-            "NUMPAD_1": [1, 0.0, 0.0, 0.0, 0.0, 0.0],   # arm0_sh1 (index 0) - positive
-            "NUMPAD_2": [-3, 0.0, 0.0, 0.0, 0.0, 0.0],  # arm0_sh1 (index 0) - negative
-            "U": [0.0, 1, 0.0, 0.0, 0.0, 0.0],   # arm0_sh0 (index 1) - positive
-            "J": [0.0, -1, 0.0, 0.0, 0.0, 0.0],  # arm0_sh0 (index 1) - negative
-            "I": [0.0, 0.0, 1, 0.0, 0.0, 0.0],   # arm0_el0 (index 2) - positive
-            "K": [0.0, 0.0, -1, 0.0, 0.0, 0.0],  # arm0_el0 (index 2) - negative
-            "P": [0.0, 0.0, 0.0, 1, 0.0, 0.0],   # arm0_el1 (index 7) - positive
-            "L": [0.0, 0.0, 0.0, -1, 0.0, 0.0],  # arm0_el1 (index 7) - negative
-            "NUMPAD_7": [0.0, 0.0, 0.0, 0.0, 1, 0.0],   # arm0_wr0 (index 12) - positive
-            "NUMPAD_4": [0.0, 0.0, 0.0, 0.0, -1, 0.0],
-            "NUMPAD_8": [0.0, 0.0, 0.0, 0.0, 0.0, 1],  # arm0_wr1 (index 17)
-            "NUMPAD_5": [0.0, 0.0, 0.0, 0.0, 0.0, -1],
-           # "NUMPAD_9": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1],  # arm0_f1x (index 18)
-           # "NUMPAD_6": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1],
+            "NUMPAD_1": [1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],   # arm0_sh1 (index 0) - positive
+            "NUMPAD_2": [-3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],  # arm0_sh1 (index 0) - negative
+            "U": [0.0, 1, 0.0, 0.0, 0.0, 0.0, 0.0],   # arm0_sh0 (index 1) - positive
+            "J": [0.0, -1, 0.0, 0.0, 0.0, 0.0, 0.0],  # arm0_sh0 (index 1) - negative
+            "I": [0.0, 0.0, 1, 0.0, 0.0, 0.0, 0.0],   # arm0_el0 (index 2) - positive
+            "K": [0.0, 0.0, -1, 0.0, 0.0, 0.0, 0.0],  # arm0_el0 (index 2) - negative
+            "P": [0.0, 0.0, 0.0, 1, 0.0, 0.0, 0.0],   # arm0_el1 (index 7) - positive
+            "L": [0.0, 0.0, 0.0, -1, 0.0, 0.0, 0.0],  # arm0_el1 (index 7) - negative
+            "NUMPAD_7": [0.0, 0.0, 0.0, 0.0, 1, 0.0, 0.0],   # arm0_wr0 (index 12) - positive
+            "NUMPAD_4": [0.0, 0.0, 0.0, 0.0, -1, 0.0, 0.0],
+            "NUMPAD_8": [0.0, 0.0, 0.0, 0.0, 0.0, 1, 0.0],  # arm0_wr1 (index 17)
+            "NUMPAD_5": [0.0, 0.0, 0.0, 0.0, 0.0, -1, 0.0],
+            "NUMPAD_9": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1],  # arm0_f1x (index 18)
+            "NUMPAD_6": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1],
         }
         
         # Simplified arm control state - no more target positions!
@@ -151,6 +154,7 @@ class SpotCabinetRunner(object):
     def setup(self) -> None:
         # Reset world first
         self._world.reset()
+
         
         # Initialize cabinet
         if self._cabinet:
@@ -247,6 +251,7 @@ class SpotCabinetRunner(object):
         # Add unified physics callback
         self._world.add_physics_callback("spot_cabinet_forward", callback_fn=self.on_physics_step)
 
+    
     def on_physics_step(self, step_size) -> None:
         if self._spot is None:
             return
@@ -285,12 +290,12 @@ class SpotCabinetRunner(object):
                 if np.any(self._base_command != 0):
                     print(f"Spot command (full policy): {self._base_command}")
                     
-                # FIX: Pass manual_arm_control=True with zero changes to maintain position
+                zero_changes = np.zeros(len(self.arm_joint_indices))
                 self._spot.forward(
                     step_size, 
                     self._base_command,
-                    manual_arm_control=True,  # ← ALWAYS TRUE to prevent policy control
-                    arm_changes=np.zeros(6)   # ← Zero changes = maintain current position
+                    manual_arm_control=True,  
+                    arm_changes=zero_changes   
                 )
         # Handle cabinet physics
         self._handle_cabinet_physics(step_size)
@@ -435,7 +440,6 @@ class SpotCabinetRunner(object):
                 print(f"New base command: {self._base_command}")
                 return True
                 
-            # FIX: Change AI toggle to a different key (not O)
             if event.input.name == "A":  # Changed from O to A
                 if self.openvla_ready:
                     ai_mode = not getattr(self, '_ai_mode', False)
@@ -448,7 +452,6 @@ class SpotCabinetRunner(object):
                     
         elif event.type == carb.input.KeyboardEventType.KEY_RELEASE:
             
-            # FIX: Handle arm key release FIRST
             if event.input.name in self._arm_keyboard_mapping:
                 joint_movement = np.array(self._arm_keyboard_mapping[event.input.name])
                 print(f"Arm key released: {event.input.name}")
