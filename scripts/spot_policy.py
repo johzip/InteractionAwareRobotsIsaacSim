@@ -89,6 +89,7 @@ class SpotFlatTerrainPolicy(PolicyController):
         obs[36:48] = self._previous_action
 
         return obs
+    
 
     def forward(self, dt, command):
         """
@@ -139,21 +140,18 @@ class SpotArmFlatTerrainPolicy(PolicyController):
 
         super().__init__(name, prim_path, root_path, usd_path, position, orientation)
 
+        self.arm_joint_indices = [0, 1, 2, 7, 12, 17]  # arm0_sh1, arm0_sh0, arm0_el0, arm0_el1, arm0_wr0, arm0_wr1
+        self.leg_joint_indices = [3, 4, 5, 6, 8, 9, 10, 11, 13, 14, 15, 16]  # All non-arm joints
+
         self.load_policy(policy_path, policy_params_path)
         self._action_scale = 0.2
         self._previous_action = np.zeros(19)
         self._policy_counter = 0
 
+    #compute observation with arm joint hiding when in manual control
     def _compute_observation(self, command):
         """
         Compute the observation vector for the policy
-
-        Argument:
-        command (np.ndarray) -- the robot command (v_x, v_y, w_z)
-
-        Returns:
-        np.ndarray -- The observation vector.
-
         """
         lin_vel_I = self.robot.get_linear_velocity()
         ang_vel_I = self.robot.get_angular_velocity()
@@ -166,25 +164,42 @@ class SpotArmFlatTerrainPolicy(PolicyController):
         gravity_b = np.matmul(R_BI, np.array([0.0, 0.0, -1.0]))
 
         obs = np.zeros(69)
-        # Base lin vel
         obs[:3] = lin_vel_b
-        # Base ang vel
         obs[3:6] = ang_vel_b
-        # Gravity
         obs[6:9] = gravity_b
-        # Command
         obs[9:12] = command
-        # Joint states
+        
         current_joint_pos = self.robot.get_joint_positions()
         current_joint_vel = self.robot.get_joint_velocities()
-        obs[12:31] = current_joint_pos - self.default_pos
-        obs[31:50] = current_joint_vel
-        # Previous Action
-        obs[50:69] = self._previous_action
+        
+        if hasattr(self, 'manual_arm_control') and self.manual_arm_control:
+            # Create fake observations where arms appear at default positions
+            fake_joint_pos = np.array(current_joint_pos).copy()
+            fake_joint_vel = np.array(current_joint_vel).copy()
+            default_pos_array = np.array(self.default_pos)
+            
+            # Set arm joints to default in observation (policy won't see arm movement)
+            fake_joint_pos[self.arm_joint_indices] = default_pos_array[self.arm_joint_indices]
+            fake_joint_vel[self.arm_joint_indices] = 0.0
+            
+            obs[12:31] = fake_joint_pos - self.default_pos
+            obs[31:50] = fake_joint_vel
+            
+            # Also fake previous arm actions
+            fake_previous_action = self._previous_action.copy()
+            fake_previous_action[self.arm_joint_indices] = 0.0
+            obs[50:69] = fake_previous_action
+            
+            print("🔒 Policy doesn't see arm movement - using fake arm state")
+        else:
+            # Normal observation
+            obs[12:31] = current_joint_pos - self.default_pos
+            obs[31:50] = current_joint_vel
+            obs[50:69] = self._previous_action
 
         return obs
 
-    def forward(self, dt, command, manual_arm_control=False, arm_targets=None):
+    def forward(self, dt, command, manual_arm_control=False, arm_changes=None):
         """
         Compute the desired torques and apply them to the articulation
 
@@ -193,19 +208,50 @@ class SpotArmFlatTerrainPolicy(PolicyController):
         command (np.ndarray) -- the robot command (v_x, v_y, w_z)
 
         """
+        # Set the flag so _compute_observation can use it
+        self.manual_arm_control = manual_arm_control
+        #print(f"joint positions: {self.robot.get_joint_positions()}")
+
         if self._policy_counter % self._decimation == 0:
             obs = self._compute_observation(command)
             self.action = self._compute_action(obs)
 
-            #if manual_arm_control and arm_targets is not None:
-            #    # Keep leg actions from policy, replace arm actions with manual targets
-            #    leg_actions = self.action[:12]  # Assume first 12 are legs
-            #    arm_actions = np.array(arm_targets) - self.default_pos[12:19]  # Convert to relative
-            #    self.action = np.concatenate([leg_actions, arm_actions])
-
             self._previous_action = self.action.copy()
 
         action = ArticulationAction(joint_positions=self.default_pos + (self.action * self._action_scale))
+
+        if manual_arm_control:
+            arm_changes = arm_changes * 0.09  # Scale down changes for smoother control
+            new_arm_changes = np.array(arm_changes)
+            current_joint_pos = self.robot.get_joint_positions()
+            
+            
+            updated_arm_pos = current_joint_pos[self.arm_joint_indices] + new_arm_changes
+        
+            # Define joint limits for each arm joint
+            arm_joint_limits = [
+                (np.deg2rad(-179.99985), np.deg2rad(30.00001)),   # arm0_sh1: -180° to 30°
+                (np.deg2rad(-149.99977), np.deg2rad(179.99985)),  # arm0_sh0: -150° to 179.99985°
+                (0.0, np.deg2rad(179.99985)),                     # arm0_el0: 0° to 180°
+                (np.deg2rad(-160.00018), np.deg2rad(160.00018)),  # arm0_el1: -160° to 160°
+                (np.deg2rad(-105.00024), np.deg2rad(105.00024)),  # arm0_wr0: -105° to 105°
+                (np.deg2rad(-165.00554), np.deg2rad(164.9998))    # arm0_wr1: -165° to 165°
+            ]
+
+            # Enforce joint limits
+            for i, (low, high) in enumerate(arm_joint_limits):
+                if low is not None and updated_arm_pos[i] < low:
+                    updated_arm_pos[i] = low
+                if high is not None and updated_arm_pos[i] > high:
+                    updated_arm_pos[i] = high
+
+            action.joint_positions[self.arm_joint_indices] = updated_arm_pos
+
+            print(f"arm_changes: {arm_changes}")
+            print(f"current_joint_pos[self.arm_joint_indices]: {current_joint_pos[self.arm_joint_indices]}")
+            print(f"action.joint_positions[self.arm_joint_indices]: {action.joint_positions[self.arm_joint_indices]}")
+
+
         self.robot.apply_action(action)
 
         self._policy_counter += 1
