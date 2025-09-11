@@ -130,6 +130,7 @@ class SpotCabinetRunner(object):
         self.processor = None
         self.vla = None
 
+ #TODO: find the viwpoint camera
     def _set_viewport_camera(self):
         """Set the main Isaac Sim viewport camera position using stage manipulation"""
         try:
@@ -145,6 +146,7 @@ class SpotCabinetRunner(object):
             
             # Try to find the perspective camera
             camera_paths = [
+                "/OmniverseKit_Persp",  # Common Isaac Sim camera path
                 "/Perspective",         # Alternative path
                 "/Camera",              # Another alternative
             ]
