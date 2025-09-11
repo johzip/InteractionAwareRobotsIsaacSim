@@ -21,7 +21,7 @@ from isaacsim.core.utils.stage import add_reference_to_stage
 from omni.isaac.sensor import Camera
 import isaacsim.core.utils.numpy.rotations as rot_utils
 
-# FIX: Make OpenVLA imports completely optional
+
 try:
     from transformers import AutoModelForVision2Seq, AutoProcessor
     from PIL import Image
@@ -78,12 +78,12 @@ class SpotCabinetRunner(object):
         # Spot control parameters
         self._base_command = np.zeros(3)
         self._input_keyboard_mapping = {
-            "NUMPAD_8": [1.0, 0.0, 0.0], "UP": [1.0, 0.0, 0.0],
-            "NUMPAD_2": [-1.0, 0.0, 0.0], "DOWN": [-1.0, 0.0, 0.0],
-            "NUMPAD_6": [0.0, -1.0, 0.0], "RIGHT": [0.0, -1.0, 0.0],
-            "NUMPAD_4": [0.0, 1.0, 0.0], "LEFT": [0.0, 1.0, 0.0],
-            "NUMPAD_7": [0.0, 0.0, 1.0], "N": [0.0, 0.0, 1.0],
-            "NUMPAD_9": [0.0, 0.0, -1.0], "M": [0.0, 0.0, -1.0],
+            "UP": [1.0, 0.0, 0.0],
+            "DOWN": [-1.0, 0.0, 0.0],
+            "RIGHT": [0.0, -1.0, 0.0],
+            "LEFT": [0.0, 1.0, 0.0],
+            "N": [0.0, 0.0, 1.0],
+            "M": [0.0, 0.0, -1.0],
         }
 
         # Arm control parameters - based on your joint indices
@@ -92,20 +92,20 @@ class SpotCabinetRunner(object):
         
         self._arm_command = np.zeros(6)  # 6 DOF arm + the buggy arm0_f1x
         self._arm_keyboard_mapping = {
-            "Q": [1, 0.0, 0.0, 0.0, 0.0, 0.0],  # arm0_sh1 (index 0)
-            "A": [-1, 0.0, 0.0, 0.0, 0.0, 0.0],
-            "W": [0.0, 1, 0.0, 0.0, 0.0, 0.0],  # arm0_sh0 (index 1)
-            "S": [0.0, -1, 0.0, 0.0, 0.0, 0.0],
-            "E": [0.0, 0.0, 1, 0.0, 0.0, 0.0],  # arm0_el0 (index 2)
-            "D": [0.0, 0.0, -1, 0.0, 0.0, 0.0],
-            "R": [0.0, 0.0, 0.0, 1, 0.0, 0.0],  # arm0_el1 (index 7)
-            "F": [0.0, 0.0, 0.0, -1, 0.0, 0.0],
-            "T": [0.0, 0.0, 0.0, 0.0, 1, 0.0],  # arm0_wr0 (index 12)
-            "G": [0.0, 0.0, 0.0, 0.0, -1, 0.0],
-            "Y": [0.0, 0.0, 0.0, 0.0, 0.0, 1],  # arm0_wr1 (index 17)
-            "H": [0.0, 0.0, 0.0, 0.0, 0.0, -1],
-           # "U": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1],  # arm0_f1x (index 18)
-           # "J": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1],
+            "Z": [1, 0.0, 0.0, 0.0, 0.0, 0.0],   # arm0_sh1 (index 0) - positive
+            "H": [-1, 0.0, 0.0, 0.0, 0.0, 0.0],  # arm0_sh1 (index 0) - negative
+            "U": [0.0, 1, 0.0, 0.0, 0.0, 0.0],   # arm0_sh0 (index 1) - positive
+            "J": [0.0, -1, 0.0, 0.0, 0.0, 0.0],  # arm0_sh0 (index 1) - negative
+            "I": [0.0, 0.0, 1, 0.0, 0.0, 0.0],   # arm0_el0 (index 2) - positive
+            "K": [0.0, 0.0, -1, 0.0, 0.0, 0.0],  # arm0_el0 (index 2) - negative
+            "O": [0.0, 0.0, 0.0, 1, 0.0, 0.0],   # arm0_el1 (index 7) - positive
+            "L": [0.0, 0.0, 0.0, -1, 0.0, 0.0],  # arm0_el1 (index 7) - negative
+            "NUMPAD_7": [0.0, 0.0, 0.0, 0.0, 1, 0.0],   # arm0_wr0 (index 12) - positive
+            "NUMPAD_4": [0.0, 0.0, 0.0, 0.0, -1, 0.0],
+            "NUMPAD_8": [0.0, 0.0, 0.0, 0.0, 0.0, 1],  # arm0_wr1 (index 17)
+            "NUMPAD_5": [0.0, 0.0, 0.0, 0.0, 0.0, -1],
+           # "NUMPAD_9": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1],  # arm0_f1x (index 18)
+           # "NUMPAD_6": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1],
         }
         
         # Simplified arm control state - no more target positions!
@@ -171,14 +171,13 @@ class SpotCabinetRunner(object):
         print(f"Using pre-defined arm joint indices: {self.arm_joint_indices}")
         print(f"Using pre-defined arm joint names: {self.arm_joint_names}")
 
-        # FIX: Only try to load OpenVLA if dependencies are available
+        
         if OPENVLA_AVAILABLE:
             try:
                 print("Loading OpenVLA processor...")
                 self.processor = AutoProcessor.from_pretrained("openvla/openvla-7b", trust_remote_code=True)
                 
                 print("Loading OpenVLA model (avoiding flash attention)...")
-                # FIX: Force disable flash attention and use standard attention
                 model_kwargs = {
                     "torch_dtype": torch.bfloat16,
                     "low_cpu_mem_usage": True,
@@ -249,9 +248,11 @@ class SpotCabinetRunner(object):
             
             # Get current arm movement command
             arm_movement = self._get_arm_movement_command()
+            print(f"manual_arm_mode: {self.manual_arm_mode}; Arm movement command: {arm_movement}")
             
+            # FIX: ALWAYS use manual arm control mode to prevent arm reset
             if self.manual_arm_mode and arm_movement is not None:
-                # Forward with manual arm control using direct movement
+                # Active arm movement
                 if np.any(self._base_command != 0):
                     print(f"Spot base command: {self._base_command}")
                     
@@ -259,14 +260,20 @@ class SpotCabinetRunner(object):
                     step_size, 
                     self._base_command,
                     manual_arm_control=True,
-                    arm_changes=arm_movement  # Pass direct movement instead of target positions
+                    arm_changes=arm_movement
                 )
             else:
-                # Normal policy control for everything
+                # NO arm movement, but still use manual control to prevent reset
                 if np.any(self._base_command != 0):
                     print(f"Spot command (full policy): {self._base_command}")
-                self._spot.forward(step_size, self._base_command)
-
+                    
+                # FIX: Pass manual_arm_control=True with zero changes to maintain position
+                self._spot.forward(
+                    step_size, 
+                    self._base_command,
+                    manual_arm_control=True,  # ← ALWAYS TRUE to prevent policy control
+                    arm_changes=np.zeros(6)   # ← Zero changes = maintain current position
+                )
         # Handle cabinet physics
         self._handle_cabinet_physics(step_size)
 

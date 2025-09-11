@@ -50,54 +50,16 @@ class SpotFlatTerrainPolicy(PolicyController):
         self._previous_action = np.zeros(12)
         self._policy_counter = 0
 
-    #def _compute_observation(self, command):
-    #    """
-    #    Compute the observation vector for the policy
-#
-    #    Argument:
-    #    command (np.ndarray) -- the robot command (v_x, v_y, w_z)
-#
-    #    Returns:
-    #    np.ndarray -- The observation vector.
-#
-    #    """
-    #    lin_vel_I = self.robot.get_linear_velocity()
-    #    ang_vel_I = self.robot.get_angular_velocity()
-    #    pos_IB, q_IB = self.robot.get_world_pose()
-#
-    #    R_IB = quat_to_rot_matrix(q_IB)
-    #    R_BI = R_IB.transpose()
-    #    lin_vel_b = np.matmul(R_BI, lin_vel_I)
-    #    ang_vel_b = np.matmul(R_BI, ang_vel_I)
-    #    gravity_b = np.matmul(R_BI, np.array([0.0, 0.0, -1.0]))
-#
-    #    obs = np.zeros(48)
-    #    # Base lin vel
-    #    obs[:3] = lin_vel_b
-    #    # Base ang vel
-    #    obs[3:6] = ang_vel_b
-    #    # Gravity
-    #    obs[6:9] = gravity_b
-    #    # Command
-    #    obs[9:12] = command
-    #    # Joint states
-    #    current_joint_pos = self.robot.get_joint_positions()
-    #    current_joint_vel = self.robot.get_joint_velocities()
-    #    obs[12:24] = current_joint_pos - self.default_pos
-    #    obs[24:36] = current_joint_vel
-    #    # Previous Action
-    #    obs[36:48] = self._previous_action
-#
-    #    return obs
-    
-    #compute observation with arm joint hiding when in manual control
     def _compute_observation(self, command):
         """
         Compute the observation vector for the policy
+
         Argument:
         command (np.ndarray) -- the robot command (v_x, v_y, w_z)
+
         Returns:
         np.ndarray -- The observation vector.
+
         """
         lin_vel_I = self.robot.get_linear_velocity()
         ang_vel_I = self.robot.get_angular_velocity()
@@ -109,42 +71,25 @@ class SpotFlatTerrainPolicy(PolicyController):
         ang_vel_b = np.matmul(R_BI, ang_vel_I)
         gravity_b = np.matmul(R_BI, np.array([0.0, 0.0, -1.0]))
 
-        obs = np.zeros(69)
+        obs = np.zeros(48)
+        # Base lin vel
         obs[:3] = lin_vel_b
+        # Base ang vel
         obs[3:6] = ang_vel_b
+        # Gravity
         obs[6:9] = gravity_b
+        # Command
         obs[9:12] = command
-        
+        # Joint states
         current_joint_pos = self.robot.get_joint_positions()
         current_joint_vel = self.robot.get_joint_velocities()
-        
-        # FIX: Hide arm state from policy when in manual control
-        if hasattr(self, 'manual_arm_control') and self.manual_arm_control:
-            # Create fake observations where arms appear at default positions
-            fake_joint_pos = np.array(current_joint_pos).copy()
-            fake_joint_vel = np.array(current_joint_vel).copy()
-            default_pos_array = np.array(self.default_pos)
-            
-            # Set arm joints to default in observation (policy won't see arm movement)
-            fake_joint_pos[self.arm_joint_indices] = default_pos_array[self.arm_joint_indices]
-            fake_joint_vel[self.arm_joint_indices] = 0.0
-            
-            obs[12:31] = fake_joint_pos - self.default_pos
-            obs[31:50] = fake_joint_vel
-            
-            # Also fake previous arm actions
-            fake_previous_action = self._previous_action.copy()
-            fake_previous_action[self.arm_joint_indices] = 0.0
-            obs[50:69] = fake_previous_action
-            
-            print("🔒 Policy doesn't see arm movement - using fake arm state")
-        else:
-            # Normal observation
-            obs[12:31] = current_joint_pos - self.default_pos
-            obs[31:50] = current_joint_vel
-            obs[50:69] = self._previous_action
+        obs[12:24] = current_joint_pos - self.default_pos
+        obs[24:36] = current_joint_vel
+        # Previous Action
+        obs[36:48] = self._previous_action
 
         return obs
+    
 
     def forward(self, dt, command):
         """
@@ -203,16 +148,10 @@ class SpotArmFlatTerrainPolicy(PolicyController):
         self._previous_action = np.zeros(19)
         self._policy_counter = 0
 
+    #compute observation with arm joint hiding when in manual control
     def _compute_observation(self, command):
         """
         Compute the observation vector for the policy
-
-        Argument:
-        command (np.ndarray) -- the robot command (v_x, v_y, w_z)
-
-        Returns:
-        np.ndarray -- The observation vector.
-
         """
         lin_vel_I = self.robot.get_linear_velocity()
         ang_vel_I = self.robot.get_angular_velocity()
@@ -225,21 +164,38 @@ class SpotArmFlatTerrainPolicy(PolicyController):
         gravity_b = np.matmul(R_BI, np.array([0.0, 0.0, -1.0]))
 
         obs = np.zeros(69)
-        # Base lin vel
         obs[:3] = lin_vel_b
-        # Base ang vel
         obs[3:6] = ang_vel_b
-        # Gravity
         obs[6:9] = gravity_b
-        # Command
         obs[9:12] = command
-        # Joint states
+        
         current_joint_pos = self.robot.get_joint_positions()
         current_joint_vel = self.robot.get_joint_velocities()
-        obs[12:31] = current_joint_pos - self.default_pos
-        obs[31:50] = current_joint_vel
-        # Previous Action
-        obs[50:69] = self._previous_action
+        
+        if hasattr(self, 'manual_arm_control') and self.manual_arm_control:
+            # Create fake observations where arms appear at default positions
+            fake_joint_pos = np.array(current_joint_pos).copy()
+            fake_joint_vel = np.array(current_joint_vel).copy()
+            default_pos_array = np.array(self.default_pos)
+            
+            # Set arm joints to default in observation (policy won't see arm movement)
+            fake_joint_pos[self.arm_joint_indices] = default_pos_array[self.arm_joint_indices]
+            fake_joint_vel[self.arm_joint_indices] = 0.0
+            
+            obs[12:31] = fake_joint_pos - self.default_pos
+            obs[31:50] = fake_joint_vel
+            
+            # Also fake previous arm actions
+            fake_previous_action = self._previous_action.copy()
+            fake_previous_action[self.arm_joint_indices] = 0.0
+            obs[50:69] = fake_previous_action
+            
+            print("🔒 Policy doesn't see arm movement - using fake arm state")
+        else:
+            # Normal observation
+            obs[12:31] = current_joint_pos - self.default_pos
+            obs[31:50] = current_joint_vel
+            obs[50:69] = self._previous_action
 
         return obs
 
@@ -252,7 +208,8 @@ class SpotArmFlatTerrainPolicy(PolicyController):
         command (np.ndarray) -- the robot command (v_x, v_y, w_z)
 
         """
-
+        # Set the flag so _compute_observation can use it
+        self.manual_arm_control = manual_arm_control
         #print(f"joint positions: {self.robot.get_joint_positions()}")
 
         if self._policy_counter % self._decimation == 0:
