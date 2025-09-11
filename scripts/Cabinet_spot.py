@@ -92,13 +92,13 @@ class SpotCabinetRunner(object):
         
         self._arm_command = np.zeros(6)  # 6 DOF arm + the buggy arm0_f1x
         self._arm_keyboard_mapping = {
-            "Z": [1, 0.0, 0.0, 0.0, 0.0, 0.0],   # arm0_sh1 (index 0) - positive
-            "H": [-1, 0.0, 0.0, 0.0, 0.0, 0.0],  # arm0_sh1 (index 0) - negative
+            "NUMPAD_1": [1, 0.0, 0.0, 0.0, 0.0, 0.0],   # arm0_sh1 (index 0) - positive
+            "NUMPAD_2": [-1, 0.0, 0.0, 0.0, 0.0, 0.0],  # arm0_sh1 (index 0) - negative
             "U": [0.0, 1, 0.0, 0.0, 0.0, 0.0],   # arm0_sh0 (index 1) - positive
             "J": [0.0, -1, 0.0, 0.0, 0.0, 0.0],  # arm0_sh0 (index 1) - negative
             "I": [0.0, 0.0, 1, 0.0, 0.0, 0.0],   # arm0_el0 (index 2) - positive
             "K": [0.0, 0.0, -1, 0.0, 0.0, 0.0],  # arm0_el0 (index 2) - negative
-            "O": [0.0, 0.0, 0.0, 1, 0.0, 0.0],   # arm0_el1 (index 7) - positive
+            "P": [0.0, 0.0, 0.0, 1, 0.0, 0.0],   # arm0_el1 (index 7) - positive
             "L": [0.0, 0.0, 0.0, -1, 0.0, 0.0],  # arm0_el1 (index 7) - negative
             "NUMPAD_7": [0.0, 0.0, 0.0, 0.0, 1, 0.0],   # arm0_wr0 (index 12) - positive
             "NUMPAD_4": [0.0, 0.0, 0.0, 0.0, -1, 0.0],
@@ -267,7 +267,6 @@ class SpotCabinetRunner(object):
             
             # Get current arm movement command
             arm_movement = self._get_arm_movement_command()
-            print(f"manual_arm_mode: {self.manual_arm_mode}; Arm movement command: {arm_movement}")
             
             # FIX: ALWAYS use manual arm control mode to prevent arm reset
             if self.manual_arm_mode and arm_movement is not None:
@@ -419,8 +418,25 @@ class SpotCabinetRunner(object):
 
     def _sub_keyboard_event(self, event, *args, **kwargs) -> bool:
         if event.type == carb.input.KeyboardEventType.KEY_PRESS:
-            # Toggle AI mode with 'O' key
-            if event.input.name == "O":
+            
+            # FIX: Handle arm movement FIRST, before AI toggle
+            if event.input.name in self._arm_keyboard_mapping:
+                joint_movement = np.array(self._arm_keyboard_mapping[event.input.name])
+                print(f"Arm key pressed: {event.input.name}")
+                print(f"  Joint movement: {joint_movement}")
+                self._arm_command += joint_movement
+                print(f"  New arm command: {self._arm_command}")
+                return True  # Consume the event
+                
+            # Handle base movement
+            if event.input.name in self._input_keyboard_mapping:
+                print(f"Base key pressed: {event.input.name}")
+                self._base_command += np.array(self._input_keyboard_mapping[event.input.name])
+                print(f"New base command: {self._base_command}")
+                return True
+                
+            # FIX: Change AI toggle to a different key (not O)
+            if event.input.name == "A":  # Changed from O to A
                 if self.openvla_ready:
                     ai_mode = not getattr(self, '_ai_mode', False)
                     self._ai_mode = ai_mode
@@ -429,35 +445,24 @@ class SpotCabinetRunner(object):
                 else:
                     print("OpenVLA not available")
                 return True
-            
-            # Handle base movement
-            if event.input.name in self._input_keyboard_mapping:
-                print(f"Base key pressed: {event.input.name}")
-                self._base_command += np.array(self._input_keyboard_mapping[event.input.name])
-                print(f"New base command: {self._base_command}")
-                
-            # Handle arm movement
-            if event.input.name in self._arm_keyboard_mapping:
-                joint_movement = np.array(self._arm_keyboard_mapping[event.input.name])
-                print(f"Arm key pressed: {event.input.name}")
-                print(f"  Joint movement: {joint_movement}")
-                self._arm_command += joint_movement
-                print(f"  New arm command: {self._arm_command}")
-                
+                    
         elif event.type == carb.input.KeyboardEventType.KEY_RELEASE:
-            if event.input.name in self._input_keyboard_mapping:
-                print(f"Base key released: {event.input.name}")
-                self._base_command -= np.array(self._input_keyboard_mapping[event.input.name])
-                print(f"New base command: {self._base_command}")
-                
-            # Handle arm key release
+            
+            # FIX: Handle arm key release FIRST
             if event.input.name in self._arm_keyboard_mapping:
                 joint_movement = np.array(self._arm_keyboard_mapping[event.input.name])
                 print(f"Arm key released: {event.input.name}")
                 self._arm_command -= joint_movement
                 print(f"  New arm command: {self._arm_command}")
+                return True
                 
-        return True
+            if event.input.name in self._input_keyboard_mapping:
+                print(f"Base key released: {event.input.name}")
+                self._base_command -= np.array(self._input_keyboard_mapping[event.input.name])
+                print(f"New base command: {self._base_command}")
+                return True
+                
+        return False
     
     def get_cabinet(self):
         return self._cabinet

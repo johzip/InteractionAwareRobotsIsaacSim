@@ -190,7 +190,6 @@ class SpotArmFlatTerrainPolicy(PolicyController):
             fake_previous_action[self.arm_joint_indices] = 0.0
             obs[50:69] = fake_previous_action
             
-            print("🔒 Policy doesn't see arm movement - using fake arm state")
         else:
             # Normal observation
             obs[12:31] = current_joint_pos - self.default_pos
@@ -210,7 +209,6 @@ class SpotArmFlatTerrainPolicy(PolicyController):
         """
         # Set the flag so _compute_observation can use it
         self.manual_arm_control = manual_arm_control
-        #print(f"joint positions: {self.robot.get_joint_positions()}")
 
         if self._policy_counter % self._decimation == 0:
             obs = self._compute_observation(command)
@@ -246,10 +244,6 @@ class SpotArmFlatTerrainPolicy(PolicyController):
                     updated_arm_pos[i] = high
 
             action.joint_positions[self.arm_joint_indices] = updated_arm_pos
-
-            print(f"arm_changes: {arm_changes}")
-            print(f"current_joint_pos[self.arm_joint_indices]: {current_joint_pos[self.arm_joint_indices]}")
-            print(f"action.joint_positions[self.arm_joint_indices]: {action.joint_positions[self.arm_joint_indices]}")
 
 
         self.robot.apply_action(action)
