@@ -140,7 +140,7 @@ class SpotArmFlatTerrainPolicy(PolicyController):
 
         super().__init__(name, prim_path, root_path, usd_path, position, orientation)
 
-        self.arm_joint_indices = [0, 1, 2, 7, 12, 17]  # arm0_sh1, arm0_sh0, arm0_el0, arm0_el1, arm0_wr0, arm0_wr1
+        self.arm_joint_indices = [0, 1, 2, 7, 12, 17, 18]  # arm0_sh1, arm0_sh0, arm0_el0, arm0_el1, arm0_wr0, arm0_wr1
         self.leg_joint_indices = [3, 4, 5, 6, 8, 9, 10, 11, 13, 14, 15, 16]  # All non-arm joints
 
         self.load_policy(policy_path, policy_params_path)
@@ -190,7 +190,6 @@ class SpotArmFlatTerrainPolicy(PolicyController):
             fake_previous_action[self.arm_joint_indices] = 0.0
             obs[50:69] = fake_previous_action
             
-            print("🔒 Policy doesn't see arm movement - using fake arm state")
         else:
             # Normal observation
             obs[12:31] = current_joint_pos - self.default_pos
@@ -210,7 +209,6 @@ class SpotArmFlatTerrainPolicy(PolicyController):
         """
         # Set the flag so _compute_observation can use it
         self.manual_arm_control = manual_arm_control
-        #print(f"joint positions: {self.robot.get_joint_positions()}")
 
         if self._policy_counter % self._decimation == 0:
             obs = self._compute_observation(command)
@@ -235,7 +233,8 @@ class SpotArmFlatTerrainPolicy(PolicyController):
                 (0.0, np.deg2rad(179.99985)),                     # arm0_el0: 0° to 180°
                 (np.deg2rad(-160.00018), np.deg2rad(160.00018)),  # arm0_el1: -160° to 160°
                 (np.deg2rad(-105.00024), np.deg2rad(105.00024)),  # arm0_wr0: -105° to 105°
-                (np.deg2rad(-165.00554), np.deg2rad(164.9998))    # arm0_wr1: -165° to 165°
+                (np.deg2rad(-165.00554), np.deg2rad(164.9998)),    # arm0_wr1: -165° to 165°
+                (np.deg2rad(-90.0), np.deg2rad(0.0))          # arm0_f1x: -90° to 0°
             ]
 
             # Enforce joint limits
@@ -246,10 +245,6 @@ class SpotArmFlatTerrainPolicy(PolicyController):
                     updated_arm_pos[i] = high
 
             action.joint_positions[self.arm_joint_indices] = updated_arm_pos
-
-            print(f"arm_changes: {arm_changes}")
-            print(f"current_joint_pos[self.arm_joint_indices]: {current_joint_pos[self.arm_joint_indices]}")
-            print(f"action.joint_positions[self.arm_joint_indices]: {action.joint_positions[self.arm_joint_indices]}")
 
 
         self.robot.apply_action(action)
