@@ -338,13 +338,13 @@ class SpotCabinetRunner(object):
 
                 if self.arm_joint_indices:
                     initial_arm_positions = np.array([
-                        np.deg2rad(-170),   # arm0_sh1: -90° (shoulder pitch)
-                        np.deg2rad(-100),     # arm0_sh0: 0° (shoulder roll)
-                        np.deg2rad(0),    # arm0_el0: 90° (elbow)
-                        np.deg2rad(0),     # arm0_el1: 0° (elbow twist)
-                        np.deg2rad(0),     # arm0_wr0: 0° (wrist roll)
-                        np.deg2rad(0),     # arm0_wr1: 0° (wrist pitch)
-                        np.deg2rad(20),     # arm0_f1x: 0° (gripper if present)
+                        -6.8275726e-01,   # arm0_sh1: -90° (shoulder pitch)
+                        6.4476831e-03,     # arm0_sh0: 0° (shoulder roll)
+                        1.1585672e+00,    # arm0_el0: 90° (elbow)
+                        1.0420896e-01,     # arm0_el1: 0° (elbow twist)
+                        -4.2314461e-01,     # arm0_wr0: 0° (wrist roll)
+                        -1.3542861e-02,     # arm0_wr1: 0° (wrist pitch)
+                        -1.5841520e-07,     # arm0_f1x: 0° (gripper if present)
                     ])
                     
                     # Trim to match actual number of discovered joints
