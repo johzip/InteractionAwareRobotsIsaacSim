@@ -1,3 +1,9 @@
+import os
+os.environ["DISABLE_FLASH_ATTENTION"] = "1"
+os.environ["FLASH_ATTENTION_AVAILABLE"] = "false"
+os.environ["USE_FLASH_ATTENTION"] = "false"
+os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
+
 from isaacsim import SimulationApp
 simulation_app = SimulationApp({"headless": False})
 
@@ -253,32 +259,70 @@ class SpotCabinetRunner(object):
         if OPENVLA_AVAILABLE:
             try:
                 print("Loading OpenVLA processor...")
+                
+                # COMPLETELY DISABLE FLASH ATTENTION BEFORE LOADING
+                import os
+                os.environ["DISABLE_FLASH_ATTENTION"] = "1"
+                os.environ["FLASH_ATTENTION_AVAILABLE"] = "false"
+                
+                # Disable flash attention in transformers
+                try:
+                    import transformers.utils.import_utils
+                    transformers.utils.import_utils._flash_attn_available = False
+                except:
+                    pass
+                
+                try:
+                    import transformers.modeling_utils
+                    transformers.modeling_utils.is_flash_attn_available = lambda: False
+                except:
+                    pass
+                
                 self.processor = AutoProcessor.from_pretrained("openvla/openvla-7b", trust_remote_code=True)
                 
-                print("Loading OpenVLA model (avoiding flash attention)...")
-                model_kwargs = {
-                    "torch_dtype": torch.bfloat16,
-                    "low_cpu_mem_usage": True,
-                    "trust_remote_code": True,
-                    # Explicitly disable flash attention
-                    "attn_implementation": "eager",  # Use standard PyTorch attention
-                }
-                
+                # Load model with explicit settings to avoid flash attention
                 self.vla = AutoModelForVision2Seq.from_pretrained(
                     "openvla/openvla-7b", 
-                    **model_kwargs
-                ).to("cuda:0")
+                    attn_implementation="eager",  # Force eager attention
+                    torch_dtype=torch.bfloat16, 
+                    low_cpu_mem_usage=True, 
+                    trust_remote_code=True,
+                    use_flash_attention_2=False,  # Explicitly disable
+                    _attn_implementation_internal="eager"  # Internal setting
+                )
                 
-                print("✅ OpenVLA loaded successfully with standard attention")
-                print("Press 'O' to toggle AI mode")
+                # Move to GPU after loading (safer)
+                self.vla = self.vla.to("cuda:0")
+                
+                print("✅ OpenVLA loaded successfully with eager attention")
+                print("Press 'A' to toggle AI mode")
                 self.openvla_ready = True
                 
             except Exception as e:
                 print(f"❌ Failed to load OpenVLA: {e}")
                 print("🎮 Falling back to manual control only")
-                self.processor = None
-                self.vla = None
-                self.openvla_ready = False
+                
+                # Try CPU fallback as last resort
+                try:
+                    print("Attempting CPU-only fallback...")
+                    self.processor = AutoProcessor.from_pretrained("openvla/openvla-7b", trust_remote_code=True)
+                    
+                    self.vla = AutoModelForVision2Seq.from_pretrained(
+                        "openvla/openvla-7b",
+                        torch_dtype=torch.float32,  # Use float32 for CPU
+                        low_cpu_mem_usage=True,
+                        trust_remote_code=True,
+                        attn_implementation="eager"
+                    )  # Keep on CPU
+                    
+                    print("⚠️ OpenVLA loaded on CPU (will be slower)")
+                    self.openvla_ready = True
+                    
+                except Exception as cpu_error:
+                    print(f"❌ CPU fallback also failed: {cpu_error}")
+                    self.processor = None
+                    self.vla = None
+                    self.openvla_ready = False
         else:
             print("🎮 Manual control mode - OpenVLA dependencies not available")
             self.processor = None
