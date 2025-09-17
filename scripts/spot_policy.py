@@ -198,6 +198,88 @@ class SpotArmFlatTerrainPolicy(PolicyController):
 
         return obs
 
+
+    def forward_removedPhysic(self, dt, command, manual_arm_control=False, arm_changes=None):
+        """
+        Move base by transform (v_x, v_y, w_z) and control arm joints.
+        Legs are held at default positions.
+        """
+        # Move base via transform
+        v_x, v_y, w_z = float(command[0]), float(command[1]), float(command[2])
+
+        # Current pose
+        pos_w, q_w = self.robot.get_world_pose()  # pos: (3,), q: (w,x,y,z)
+        R_wb = quat_to_rot_matrix(q_w)
+
+        # Configurable speeds
+        lin_scale = 1.0  # m/s per command unit
+        yaw_scale = 1.5  # rad/s per command unit
+
+        # Translate in robot frame then rotate to world
+        delta_local = np.array([v_x, v_y, 0.0]) * lin_scale * dt
+        delta_world = R_wb @ delta_local
+        new_pos = pos_w + delta_world
+
+        # Yaw update around world Z: q_new = q_delta ⊗ q
+        dyaw = w_z * yaw_scale * dt
+        c, s = np.cos(dyaw * 0.5), np.sin(dyaw * 0.5)
+        q_delta = np.array([c, 0.0, 0.0, s])  # (w,x,y,z)
+
+        # Quaternion multiply: (w1,x1,y1,z1) ⊗ (w2,x2,y2,z2)
+        def quat_mul(a, b):
+            aw, ax, ay, az = a
+            bw, bx, by, bz = b
+            return np.array([
+                aw*bw - ax*bx - ay*by - az*bz,
+                aw*bx + ax*bw + ay*bz - az*by,
+                aw*by - ax*bz + ay*bw + az*bx,
+                aw*bz + ax*by - ay*bx + az*bw,
+            ], dtype=float)
+
+        new_q = quat_mul(q_delta, q_w)
+        self.robot.set_world_pose(new_pos, new_q)
+
+        # Build joint targets:
+        # - Legs: hold at default
+        # - Arm: apply manual changes if provided; else default
+        current_joint_pos = self.robot.get_joint_positions()
+        target = np.array(self.default_pos, dtype=float)
+
+        # Preserve current arm as base to add changes smoothly
+        if manual_arm_control and arm_changes is not None:
+            arm_changes = np.asarray(arm_changes, dtype=float)
+            if len(arm_changes) >= len(self.arm_joint_indices):
+                target[self.arm_joint_indices] = (
+                    current_joint_pos[self.arm_joint_indices] + arm_changes[:len(self.arm_joint_indices)]
+                )
+        # Clamp arm to limits (same as before)
+        arm_joint_limits = [
+            (np.deg2rad(-179.99985), np.deg2rad(30.00001)),   # arm0_sh1
+            (np.deg2rad(-149.99977), np.deg2rad(179.99985)),  # arm0_sh0
+            (0.0, np.deg2rad(179.99985)),                     # arm0_el0
+            (np.deg2rad(-160.00018), np.deg2rad(160.00018)),  # arm0_el1
+            (np.deg2rad(-105.00024), np.deg2rad(105.00024)),  # arm0_wr0
+            (np.deg2rad(-165.00554), np.deg2rad(164.9998)),   # arm0_wr1
+            (np.deg2rad(-90.0), np.deg2rad(0.0)),             # arm0_f1x
+        ]
+        if manual_arm_control and arm_changes is not None:
+            updated = target[self.arm_joint_indices]
+            for i, (lo, hi) in enumerate(arm_joint_limits):
+                if updated[i] < lo: updated[i] = lo
+                if updated[i] > hi: updated[i] = hi
+            target[self.arm_joint_indices] = updated
+
+        # Hold legs at default
+        target[self.leg_joint_indices] = np.array(self.default_pos)[self.leg_joint_indices]
+
+        # Apply joints
+        self.robot.apply_action(ArticulationAction(joint_positions=target))
+
+        # Book-keeping (no leg policy used)
+        self._previous_action = np.zeros_like(self._previous_action)
+        self._policy_counter += 1
+
+
     def forward(self, dt, command, manual_arm_control=False, arm_changes=None):
         """
         Compute the desired torques and apply them to the articulation
@@ -219,7 +301,6 @@ class SpotArmFlatTerrainPolicy(PolicyController):
         action = ArticulationAction(joint_positions=self.default_pos + (self.action * self._action_scale))
 
         if manual_arm_control:
-            arm_changes = arm_changes * 0.09  # Scale down changes for smoother control
             new_arm_changes = np.array(arm_changes)
             current_joint_pos = self.robot.get_joint_positions()
             
